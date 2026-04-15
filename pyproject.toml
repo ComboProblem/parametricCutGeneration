@@ -1,0 +1,50 @@
+[build-system]
+requires = [
+  'setuptools>=61.2',
+  'setuptools_scm[toml]>=6.0',
+  'importlib-resources>=1.1.0',
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "parametricCutGen"
+description = "Experimental Cut and Branch solver using optimal cut selection via parameterized cut generating functions."
+authors = [
+    {name = "Acadia Larsen", email = "acadia.larsen@gmail.com"},
+]
+dependencies = [
+"cutgeneratingfunctionology",
+ "scipy", 
+ "pyscipopt"]
+requires-python = ">=3.9"
+license = "GPL-2.0-or-later"
+keywords = ["integer programming", "cutting planes"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Mathematics",
+]
+dynamic = ['version']
+
+[project.readme]
+file = "README.rst"
+content-type = "text/x-rst"
+
+[project.urls]
+Homepage = "https://github.com/ComboProblem/parametricCutGeneration"
+
+
+[tool.setuptools_scm]
+write_to = 'version.txt'
+version_scheme = 'post-release'
+local_scheme = 'dirty-tag'
+
+[tool.setuptools.packages.find]
+where = ["src"]
