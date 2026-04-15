@@ -1,0 +1,28 @@
+##############################
+##### Experimental Settings #####
+##############################
+
+[experiment.parameters]
+max_number_of_seperation_rounds = 1000
+number_of_cuts_at_root_node = [ 1, 10, 100, 1000 ]
+number_of_cuts_at_subsquent_nodes = [ 1, 10, 100, 1000 ]
+write_cgf_log = true
+algorithm = [ "bkpt_as_param", "full", "value_poly_lp"]
+prove_seperator = false
+show_proof = false
+epsilon=10**-7
+M = 10**7
+max_cgf_solver_time_per_iter = 1500
+paramaterized_problem_solver = "SciPy"
+
+[experiment.parameters.bkpt_as_param]
+max_number_of_bkpts = [ 10, 20, 30, 40, 50, 60, 70, 80, 90, 100 ] 
+cut_score = [ "parallelism"]
+
+[experiment.parameters.full]
+nax_number_of_bkpts = [2, 4, 5, 6, 7, 8, 9, 10]
+cut_score = [ "steepest", "parallelism"] 
+
+[experiment.parameters.value_poly_lp]
+
+

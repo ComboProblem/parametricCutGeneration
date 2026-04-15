@@ -1,0 +1,234 @@
+##############################
+####### SCIP Parameters #######
+##############################
+
+[SCIP.parameters]
+
+# maximal relative distance from current node's dual bound to primal bound compared to best node's dual bound for applying separation (0.0: only on current best node, 1.0: on all nodes)
+# [type: real, advanced: FALSE, range: [0,1], default: 1]
+separating/maxbounddist = 1
+
+# maximal relative distance from current node's dual bound to primal bound compared to best node's dual bound for applying local separation (0.0: only on current best node, 1.0: on all nodes)
+# [type: real, advanced: FALSE, range: [0,1], default: 0]
+separating/maxlocalbounddist = 0
+
+# maximal ratio between coefficients in strongcg, cmir, and flowcover cuts
+# [type: real, advanced: FALSE, range: [1,1e+98], default: 10000]
+separating/maxcoefratio = 10000
+
+# maximal ratio between coefficients (as factor of 1/feastol) to ensure in rowprep cleanup
+# [type: real, advanced: FALSE, range: [0,1.79769313486232e+308], default: 10]
+separating/maxcoefratiofacrowprep = 10
+
+# minimal efficacy for a cut to enter the LP
+# [type: real, advanced: FALSE, range: [0,1e+98], default: 0.0001]
+separating/minefficacy = 0.0001
+
+# minimal efficacy for a cut to enter the LP in the root node
+# [type: real, advanced: FALSE, range: [0,1e+98], default: 0.0001]
+separating/minefficacyroot = 0.0001
+
+# minimum cut activity quotient to convert cuts into constraints during a restart (0.0: all cuts are converted)
+# [type: real, advanced: FALSE, range: [0,1], default: 0.8]
+separating/minactivityquot = 0.8
+
+# factor w.r.t. maxcuts for maximal number of cuts generated per separation round (-1.0: no limit, >= 0.0: valid finite limit)
+# [type: real, advanced: FALSE, range: [-1,1.79769313486232e+308], default: 2]
+separating/maxcutsgenfactor = 2
+
+# factor w.r.t. maxcutsroot for maximal number of generated cuts per separation round at the root node (-1.0: no limit, >= 0.0: valid finite limit)
+# [type: real, advanced: FALSE, range: [-1,1.79769313486232e+308], default: 2]
+separating/maxcutsrootgenfactor = 2
+
+# function used for calc. scalar prod. in orthogonality test ('e'uclidean, 'd'iscrete)
+# [type: char, advanced: TRUE, range: {ed}, default: e]
+separating/orthofunc = e
+
+# row norm to use for efficacy calculation ('e'uclidean, 'm'aximum, 's'um, 'd'iscrete)
+# [type: char, advanced: TRUE, range: {emsd}, default: e]
+separating/efficacynorm = e
+
+# cut selection during restart ('a'ge, activity 'q'uotient)
+# [type: char, advanced: TRUE, range: {aq}, default: a]
+separating/cutselrestart = a
+
+# cut selection for sub SCIPs  ('a'ge, activity 'q'uotient)
+# [type: char, advanced: TRUE, range: {aq}, default: a]
+separating/cutselsubscip = a
+
+# should cutpool separate only cuts with high relative efficacy?
+# [type: bool, advanced: TRUE, range: {TRUE,FALSE}, default: FALSE]
+separating/filtercutpoolrel = FALSE
+
+# maximal number of runs for which separation is enabled (-1: unlimited)
+# [type: int, advanced: TRUE, range: [-1,2147483647], default: -1]
+separating/maxruns = -1
+
+##############################
+######## This should be . We aim to apply at root node only
+### should set value to max_number_of_seperation_rounds being at least as large as max number of cuts added at teh root
+### for now i'm setting at 10 for testing puproses 
+# maximal number of separation rounds per node (-1: unlimited)
+# [type: int, advanced: FALSE, range: [-1,2147483647], default: -1]
+separating/maxrounds = 10
+
+###############################
+######### This should be given the experimental value
+# maximal number of separation rounds in the root node (-1: unlimited)
+# [type: int, advanced: FALSE, range: [-1,2147483647], default: -1]
+separating/maxroundsroot = 10
+
+######################
+###### Set this to experimental value.
+# maximal number of separation rounds in the root node of a subsequent run (-1: unlimited)
+# [type: int, advanced: TRUE, range: [-1,2147483647], default: -1]
+separating/maxroundsrootsubrun = -1
+
+#######################
+#########  set to exp value
+# maximal additional number of separation rounds in subsequent price-and-cut loops (-1: no additional restriction)
+# [type: int, advanced: TRUE, range: [-1,2147483647], default: 1]
+separating/maxaddrounds = 1
+
+
+###########
+### leave as is
+# maximal number of consecutive separation rounds without objective or integrality improvement in local nodes (-1: no additional restriction)
+# [type: int, advanced: FALSE, range: [-1,2147483647], default: 1]
+separating/maxstallrounds = 1
+
+###############
+####### set to 
+# maximal number of consecutive separation rounds without objective or integrality improvement in the root node (-1: no additional restriction)
+# [type: int, advanced: FALSE, range: [-1,2147483647], default: 10]
+separating/maxstallroundsroot = 10
+
+# maximal number of cuts separated per separation round (0: disable local separation)
+# [type: int, advanced: FALSE, range: [0,2147483647], default: 100]
+separating/maxcuts = 100
+
+# maximal number of separated cuts per separation round at the root node (0: disable root node separation)
+# [type: int, advanced: FALSE, range: [0,2147483647], default: 2000]
+separating/maxcutsroot = 2000
+
+############3
+### set to -1, I think keep all the generated cuts. 
+# maximum age a cut can reach before it is deleted from the global cut pool, or -1 to keep all cuts
+# [type: int, advanced: TRUE, range: [-1,2147483647], default: 80]
+separating/cutagelimit = 80
+
+################
+######## I think this should be 0 for testing at the root 
+# separation frequency for the global cut pool (-1: disable global cut pool, 0: only separate pool at the root)
+# [type: int, advanced: FALSE, range: [-1,1073741822], default: 10]
+separating/poolfreq = 10
+
+##########################
+######    TURN OFF    ######
+######      OTHER       ######
+###### SEPARATORS ######
+##########################
+
+# frequency for calling separator <closecuts> (-1: never, 0: only in root node)
+# [type: int, advanced: FALSE, range: [-1,1073741822], default: -1]
+separating/closecuts/freq = -1
+
+# frequency for calling separator <flower> (-1: never, 0: only in root node)
+# [type: int, advanced: FALSE, range: [-1,1073741822], default: 1]
+separating/flower/freq = -1
+
+# frequency for calling separator <rlt> (-1: never, 0: only in root node)
+# [type: int, advanced: FALSE, range: [-1,1073741822], default: 0]
+separating/rlt/freq = -1
+
+# frequency for calling separator <disjunctive> (-1: never, 0: only in root node)
+# [type: int, advanced: FALSE, range: [-1,1073741822], default: 0]
+separating/disjunctive/freq = -1
+
+# frequency for calling separator <gauge> (-1: never, 0: only in root node)
+# [type: int, advanced: FALSE, range: [-1,1073741822], default: -1]
+separating/gauge/freq = -1
+
+# frequency for calling separator <interminor> (-1: never, 0: only in root node)
+# [type: int, advanced: FALSE, range: [-1,1073741822], default: -1]
+separating/interminor/freq = -1
+
+# frequency for calling separator <minor> (-1: never, 0: only in root node)
+# [type: int, advanced: FALSE, range: [-1,1073741822], default: 10]
+separating/minor/freq = -1
+
+# frequency for calling separator <convexproj> (-1: never, 0: only in root node)
+# [type: int, advanced: FALSE, range: [-1,1073741822], default: -1]
+separating/convexproj/freq = -1
+
+# frequency for calling separator <mixing> (-1: never, 0: only in root node)
+# [type: int, advanced: FALSE, range: [-1,1073741822], default: 10]
+separating/mixing/freq = -1
+
+# frequency for calling separator <impliedbounds> (-1: never, 0: only in root node)
+# [type: int, advanced: FALSE, range: [-1,1073741822], default: 10]
+separating/impliedbounds/freq = -1
+
+# frequency for calling separator <intobj> (-1: never, 0: only in root node)
+# [type: int, advanced: FALSE, range: [-1,1073741822], default: -1]
+separating/intobj/freq = -1
+
+# frequency for calling separator <cgmip> (-1: never, 0: only in root node)
+# [type: int, advanced: FALSE, range: [-1,1073741822], default: -1]
+separating/cgmip/freq = -1
+
+# frequency for calling separator <gomory> (-1: never, 0: only in root node)
+# [type: int, advanced: FALSE, range: [-1,1073741822], default: 10]
+separating/gomory/freq = -1
+
+# frequency for calling separator <strongcg> (-1: never, 0: only in root node)
+# [type: int, advanced: FALSE, range: [-1,1073741822], default: 10]
+separating/strongcg/freq = -1
+
+# frequency for calling separator <gomorymi> (-1: never, 0: only in root node)
+# [type: int, advanced: FALSE, range: [-1,1073741822], default: 10]
+separating/gomorymi/freq = -1
+
+# frequency for calling separator <flowcover> (-1: never, 0: only in root node)
+# [type: int, advanced: FALSE, range: [-1,1073741822], default: 10]
+separating/flowcover/freq = -1
+
+# frequency for calling separator <cmir> (-1: never, 0: only in root node)
+# [type: int, advanced: FALSE, range: [-1,1073741822], default: 10]
+separating/cmir/freq = -1
+
+# frequency for calling separator <knapsackcover> (-1: never, 0: only in root node)
+# [type: int, advanced: FALSE, range: [-1,1073741822], default: 10]
+separating/knapsackcover/freq = -1
+
+# frequency for calling separator <aggregation> (-1: never, 0: only in root node)
+# [type: int, advanced: FALSE, range: [-1,1073741822], default: 10]
+separating/aggregation/freq = -1
+
+# frequency for calling separator <clique> (-1: never, 0: only in root node)
+# [type: int, advanced: FALSE, range: [-1,1073741822], default: 0]
+separating/clique/freq = -1
+
+# frequency for calling separator <zerohalf> (-1: never, 0: only in root node)
+# [type: int, advanced: FALSE, range: [-1,1073741822], default: 10]
+separating/zerohalf/freq = -1
+
+# frequency for calling separator <lagromory> (-1: never, 0: only in root node)
+# [type: int, advanced: FALSE, range: [-1,1073741822], default: -1]
+separating/lagromory/freq = -1
+
+# frequency for calling separator <mcf> (-1: never, 0: only in root node)
+# [type: int, advanced: FALSE, range: [-1,1073741822], default: 0]
+separating/mcf/freq = -1
+
+# frequency for calling separator <eccuts> (-1: never, 0: only in root node)
+# [type: int, advanced: FALSE, range: [-1,1073741822], default: -1]
+separating/eccuts/freq = -1
+
+# frequency for calling separator <oddcycle> (-1: never, 0: only in root node)
+# [type: int, advanced: FALSE, range: [-1,1073741822], default: -1]
+separating/oddcycle/freq = -1
+
+# frequency for calling separator <rapidlearning> (-1: never, 0: only in root node)
+# [type: int, advanced: FALSE, range: [-1,1073741822], default: 5]
+separating/rapidlearning/freq = -1
