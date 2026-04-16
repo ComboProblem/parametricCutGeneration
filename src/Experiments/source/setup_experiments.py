@@ -6,45 +6,53 @@ from parametricCutGen.utils import validate_paths, parse_logger
 
 setup_experiments_logger = parse_logger(__name__)
 
-paths = ({"container":os.getenv("OPTIMAL_CUT_CONTAINER"), "experiment_params":os.getenv("EXP_PARAM_PATH"), "model_files":os.getenv("MODEL_FILES")}, "conduct_experiment_base":os.getenv("PARAMETRIC_EXPS_BASE"))
-paths = validate_paths(paths, setup_experiments_logger)
+shell_paths = {"container":os.getenv("OPTIMAL_CUT_CONTAINER"), "experiment_params":os.getenv("EXP_PARAM_PATH"), "model_files":os.getenv("MODEL_FILES"), "conduct_experiment_base":os.getenv("PARAMETRIC_EXPS_BASE") }
+paths = validate_paths(shell_paths, setup_experiments_logger)
 
 def setup_parametric_experiments(paths):
-    
-    return experiment_list # list of dictionaries with particular parameters for each experiments
+    with open(paths["experiment_params"]) as f:
+        parsed_toml_file = tomllib.loads(f.read())
+    global_settings = {setting:parsed_toml_file['experiment']['settings'][setting]  for setting in parsed_toml_file['experiment']['settings']}
+    experiment_list = [ {param:parsed_toml_file['experiment']['parameters'][algo][param] for param in parsed_toml_file['experiment']['parameters'][algo]}  for algo in parsed_toml_file['experiment']['parameters']['algorithm'] ]
+    return experiment_list, global_settings # list of dictionaries with particular parameters for each experiments
 
-def setup_experiment_paths(paths, experiment):
+def setup_experiment_paths(paths, experiment, global_settings):
     """
-    Experiment paths are named in the following manner $PARAMETRIC_EXPS_BASE/algorithm/cut_score/number_of_bkpts
+    Experiment paths are named in the following manner $PARAMETRIC_EXPS_BASE/algorithm/cut_score/max_number_of_bkpts
     where the last bit is an if applicable type of deal. Each experimental path has a folder named TrialPrograms and Data. 
     """
-    experiment_dir_algo = os.path.join(paths["conduct_experiment_base"], experiment["algorithm"])
-    if not os.path.exists(experiment_dir_algo):
-        os.mkdir(experiment_dir_algo)
-    experiment_dir_algo_cut_score = os.path.join(experiment_dir_algo, experiment["cut_score"])
-    if not os.path.exists(experiment_dir_algo_cut_score):
-        os.mkdir(experiment_dir_algo_cut_score)
-    experiment_dir_algo_cut_score_num_bkpt = os.path.join(experiment_dir_algo_cut_score, experiment["max_number_of_bkpts"])
-    if not os.path.exists(experiment_dir_algo_cut_score_num_bkpt):
-        os.mkdir(experiment_dir_algo_cut_score_num_bkpt)
-    trial_programs_dir = os.path.join(experiment_dir_algo_cut_score_num_bkpt, "TrialPrograms")
-    if not os.path.exists(trial_programs_dir):
-        os.mkdir(trial_programs_dir)
-    exp_data_dir = os.path.join(experiment_dir_algo_cut_score_num_bkpt, "Data")
+    # we order directory names by ordering the names of the parameters
+    experimental_paramaters = ["algorithm", "cut_score", "max_number_of_bkpts","number_of_cuts_at_root_node", "number_of_cuts_at_subsequent_nodes"]
+    working_dir =  paths["conduct_experiment_base"]
+    for param in experimental_paramaters:
+        path = os.path.join(working_dir, experiment[param])
+        if not os.path.exists(path):
+            os.mkdir(path)
+        else:
+            setup_experiments_logger.debug(f"Path {path} already exists.")
+        working_dir = path
+    trial_program_dir = os.path.join(working_dir, "TrialPrograms")
+    if not os.path.exists(trial_program_dir):
+        os.mkdir(trial_program_dir)
+    else:
+        setup_experiments_logger.warning(f"Trial Program paths exists. Proceed with caution path: {trial_program_dir}")
+    exp_data_dir =  os.path.join(working_dir, "Data")
     if not os.path.exists(exp_data_dir):
         os.mkdir(exp_data_dir)
-    paths["trial_programs"] = trial_programs_dir
+    else:
+        setup_experiments_logger.warning(f"Trial Program paths exists. Proceed with caution path: {exp_data_dir}")
+    paths["trial_programs"] = trial_program_dir
     paths["exp_data"] = exp_data_dir
     return paths
 
 def write_trials_for_experiments(paths, experiment):
     """
-    Writes all experimental trials to trial directory and defines a scrip to run all trials.
+    Writes all experimental trials programs to trial directory and defines a program to run all trial programs.
     """
     # setup paths
     paths = setup_experiment_paths(paths, experiment)
     setup_experiments_logger.info(f"Writing config file for {experiment}")
-    with open(os.path.join(paths["trial_programs"], "experiment.json")) as exp_config:
+    with open(os.path.join(paths["trial_programs"], "experiment_parameters.json")) as exp_config:
         json.dump(experiment, exp_config)
     setup_experiments_logger.info(f"Writing trials for experiment with parameters {experiment}")
     # main loop
@@ -54,9 +62,10 @@ def write_trials_for_experiments(paths, experiment):
         with open(os.path.join(paths["trial_programs"], trial_file_name), w) as trial_file:
             trial_file.write("#!/bin/bash\n")
             trial_file.write("source cluster_environment.sh\n")
+            trial_file.write(f"export EXPERIMENT_TRIAL_PROGRAMS_PATH={paths["trial_programs"]}\n") # contains experiment_parameters.json
             trial_file.write(f"export MODEL={model_file}\n")
-            trial_file.write(f"export DATA_TARGET={paths["exp_data"]}\n")
-            trial_file.write(f"echo RUNNING TRIAL NUMBER $SLURM_ARRAY_TASK_ID for experiment {experiment}\n")
+            trial_file.write(f"export DATA_TARGET_PATH={paths["exp_data"]}\n")
+            trial_file.write(f"echo RUNNING TRIAL NUMBER $SLURM_ARRAY_TASK_ID for experiment parameters {experiment}\n")
             trial_file.write("module load apptainer\n")
             apptainer_confg_line = f"apptainer run {paths["container"]} {os.path.join(paths["experiment"],"run_trial.py"}"
             trial_file.write(apptainer_confg_line)
@@ -71,5 +80,9 @@ def write_trials_for_experiments(paths, experiment):
         run_trials.write(f"sbatch array=0-$NUMBER_OF_TRIALS account=$CLUSTER_ACCOUNT partition=$PARTITION time=$TRIAL_TIME:00 mem=$TRIAL_MEM {os.path.joint(paths["trial_programs"], "trial_$.sh"}") 
 
 def __main__():
-    for experiment in setup_parametric_experiments(paths):
-        write_trials_for_experiments(paths, experiment)
+    experiments, global_settings = setup_parametric_experiments(paths)
+    setup_experiments_logger.info(f"Writing config file for global_settings {global_settings}")
+    with open(os.path.join(paths["trial_programs"], "global_settings.json")) as exp_config:
+        json.dump(experiment, exp_config)
+    for experiment in experiments:
+        write_trials_for_experiments(paths, experiment, global_settings)
