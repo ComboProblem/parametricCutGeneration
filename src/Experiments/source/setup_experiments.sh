@@ -1,6 +1,6 @@
 #! /bin/bash -x
 
-source 
+source src/Experiments/source/cluster_enviroment.sh
 
 module load apptainer
-apptainer run "./src/Experiments/source/optimal_cut.sif" "./src/Experiments/source/setup_experiments.py"
+apptainer run $OPTIMAL_CUT_CONTAINER "./src/Experiments/source/setup_experiments.py"
