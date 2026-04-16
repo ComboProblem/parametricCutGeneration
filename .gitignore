@@ -1,8 +1,14 @@
 #ignore build stuff
 build/
 .git/
-MinimalFunctionCache.egg-info/
+parametricCutGeneration.egg-info/
 # Ignore slurm output files
 *.out
 # Ignore sif images
 *.sif
+# Ignore dataset and problem files
+*.mps
+*.gz
+# Ignore compressed downloaded files
+*.tar
+*.zip
