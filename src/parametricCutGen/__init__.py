@@ -1,1 +1,1 @@
-from parametricCutGen.optimal_cut_generation import optimal_cut_generation
+from parametricCutGen.optimal_cut_generation import *

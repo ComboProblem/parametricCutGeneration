@@ -6,11 +6,11 @@ import logging
 import time
 
 cut_gen_logger = logging.getLogger(__name__)
-cut_gen_logger.setLevel(logging.WARNING)
+cut_gen_logger.setLevel(logging.DEBUG)
 
 minimal_function_cashe_logging = True
 
-max_bkpts = 4
+max_bkpts = 7
 
 
 def find_f_index(min_pwl):
@@ -473,21 +473,20 @@ class cutGenerationProblem:
     Option: prove_seperator - bool
     Option: epsilon - value to det
     """
-    def __init__(self, algorithm_name=None, cut_score=None, num_bkpt=None, multithread=False, prove_seperator=False, show_proof=False,
-        epsilon=10**-7, M = 10**7, rel_tol=10**-6, max_cgf_solver_time=None, paramaterized_problem_solver=None,
-        minimal_function_cache_path = None, backend=None):
-        if algorithm_name is None or algorithm_name.lower() == "full":
-            self._algorithm_name = "full"
+    def __init__(self, algorithm=None,backend=None, cut_score=None,  epsilon=10**-7, M = 10**7, max_cgf_solver_time=None, max_num_of_bkpts=None, multithread=False,
+        paramaterized_solver=None, prove_seperator=False, rel_tol=10**-6, show_proof=False):
+        if algorithm is None or algorithm.lower() == "full":
+            self._algorithm = "full"
             if num_bkpt is None or num_bkpt < 1 or num_bkpt > max_bkpts:
                 raise ValueError(f"Incorrect number of breakpoints defined for full algorithm. 2 <= num_bkpt <= {max_bkpts}.")
             self._num_bkpt = num_bkpt
             self._cut_space = None
             self._solver = scipyCutGenProbelmSolverInterface
-        elif algorithm_name.lower() == "bkpt_as_param":
-            self._algorithm_name = "bkpt_as_param"
+        elif algorithm.lower() == "bkpt_as_param":
+            self._algorithm = "bkpt_as_param"
             self._solver = scipyCutGenProbelmSolverInterface
-        elif algorithm_name.lower() == "value_poly_lp":
-            self._algorithm_name = "value_poly_lp"
+        elif algorithm.lower() == "value_poly_lp":
+            self._algorithm = "value_poly_lp"
         else:
             raise ValueError("No other algorithms are supported at this time.")
         if cut_score is None:
@@ -521,9 +520,9 @@ class cutGenerationProblem:
         """
         # assume MIP is a scip model; really we should be passing in and LP relaxation with variable information here.
         # The cut generation problem
-        if self._algorithm_name == "full":
+        if self._algorithm == "full":
             cgf = self._algorithm_full_space(binvarow, binvc, f)
-        elif self._algorithm_name == "bkpt_as_param":
+        elif self._algorithm == "bkpt_as_param":
             cgf = self._algorithm_bkpt_as_param(binvarow, binvc, f)
         elif self._algorithm_full_space == "value_poly_lp":
             cgf = self._algorithm_value_poly_lp(binvarow, binvc, f)
@@ -549,7 +548,7 @@ class cutGenerationProblem:
                 raise ValueError("The Minimal Functions Cache for {} breakpoints requested has not been computed.".format(self._num_bkpt))
              self._cut_space = PiMinContContainer(self._num_bkpt, backend=self._backend)
         # start the clock when the actual portion of the solving processs starts.
-        problem_timer = cgfTimer(self._max_cgf_solver_time)
+        problem_timer = cgfTimer(Selft._max_cgf_solver_time)
         self._cut_score.set_timer(problem_timer)
         for b, v in self._cut_space.get_rep_elems():
             # f is a bkpt when pi has a finite number of bkpts.
@@ -618,7 +617,6 @@ class cutGenerationProblem:
                         rep_elem_of_best_cell = b+v
                     if not continue_solving:
                         break
-
             except EmptyBSA:
                 pass
         # If result is None, the solver has failed to find any meaningful result or the computation has timed out.
@@ -628,7 +626,7 @@ class cutGenerationProblem:
         val_result = [QQ(gamma_i) for gamma_i in solution_for_best_result[self._num_bkpt:]]
         bkpt_result = [QQ(lambda_i) for lambda_i in solution_for_best_result[:self._num_bkpt]]
         pi_p = piecewise_function_from_breakpoints_and_values(bkpt_result+[1],val_result+[0])
-        cut_gen_logger.info(f"{pi_p} is the found function for the row: {binvarow}, objective:{binvc},and f{f}")
+        log_problem_result(bkpt_result, val_result, binvarow, binvc, f)
         if self._prove_seperator:
             res = minimality_test(pi_p) # add someway to log certificates.
             if not res:
@@ -664,8 +662,8 @@ class cutGenerationProblem:
             sparse_bkpt.append(frac_f)
         num_bkpt = len(sparse_bkpt)
         if num_bkpt == 2:
-            cut_gen_logger.info("Parsed row data suggests to use GMIC.")
-            cut_gen_logger.info("Dim of value polyhedron: 0")
+            cut_gen_logger.debug("Parsed row data suggests to use GMIC.")
+            cut_gen_logger.debug("Dim of value polyhedron: 0")
             pi_p =  gmic(frac_f)
             log_problem_result(sparse_bkpt, [0, 1], binvarow, binvc, f)
             if self._prove_seperator:
@@ -678,7 +676,7 @@ class cutGenerationProblem:
         f_index = sparse_bkpt.index(frac_f)
         self._cut_score.set_f_index(f_index)
         value_polyhedron =  value_nnc_polyhedron(sparse_bkpt, f_index, backend=self._backend)
-        cut_gen_logger.info(f"Dim of value polyhedron :{value_polyhedron.upstairs().ambient_dim()}")
+        cut_gen_logger.debug(f"Dim of value polyhedron :{value_polyhedron.upstairs().ambient_dim()}")
         point = list(value_polyhedron.find_point())
         # initialize a feasible point for the cut scoring function to remember.
         self._cut_score.set_feasible_point(point)
@@ -941,9 +939,11 @@ class scipyCutGenProbelmSolverInterface(abstractCutGenProblemSolverInterface):
 
 
 class OptimalCut(Sepa):
-    def __init__(self, algorithm_name=None, cut_score=None, num_bkpt=None, multithread=False, prove_seperator=True, show_proof = False, epsilon=10**-7, M = 10**7):
+    def __init__(self, algorithm=None, backend=None, cut_score=None,  epsilon=10**-7, M=10**7, max_cgf_solver_time=None, max_num_of_bkpts=None, multithread=False,
+        paramaterized_solver=None, prove_seperator=False, rel_tol=10**-6, show_proof=False):
         self.ncuts = 0
-        self.cgp = cutGenerationProblem(algorithm_name=algorithm_name, cut_score=cut_score, num_bkpt=num_bkpt, multithread=multithread, prove_seperator=prove_seperator, show_proof = show_proof, epsilon=epsilon, M = epsilon)
+        self.cgp = cutGenerationProblem(algorithm=algorithm, backend=backend, cut_score=cut_score,  epsilon=epsilon, M=M, max_cgf_solver_time=max_cgf_solver_time, max_num_of_bkpts=max_num_of_bkpts, multithread=multithread,
+        paramaterized_solver=paramaterized_solver, prove_seperator=prove_seperator, rel_tol=rel_tol, show_proof=show_proof)
     def getOptimalCutFromRow(self, cols, rows, binvrow, binvarow, primsol, pi_p):
         """ Given the row (binvarow, binvrow) of the tableau, computes optimized cut.
 
@@ -953,7 +953,7 @@ class OptimalCut(Sepa):
         :param binvrow:  components of the tableau row associated to the basis inverse
         :param binvarow: components of the tableau row associated to the basis inverse * A
         :param 1dPWL:    a minimal funciton element of PiMin<=k with pi_p(primsol)=1
-
+    
         The interesection cut is given by
          sum(pi_p(a_j) x_j, j in J_I) \geq 1
         where J_I are the integer non-basic variables and J_C are the continuous.

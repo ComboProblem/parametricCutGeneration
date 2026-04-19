@@ -13,27 +13,22 @@ shell_paths = { "experiment_trial_programs_path":os.getenv("EXPERIMENT_TRIAL_PRO
 
 paths = validate_paths(shell_paths, trial_logger)
 
-def experiment_parameters_parser(paths)
-    return json.loads(os.path.join(paths["experiment_trial_programs_path"], "experiment_parameters.json")
-
 def scip_parameter_parser_and_model_loader(paths):
     """configures the model"""
-    with open(os.path.join(paths["experiment_params"], "scip_experimental_settings.toml") as f:
-        parsed_toml_file = tomllib.loads(f.read())
-    
+    model = Model()
+    # model.readParams(os.path.join(paths["experiment_trial_programs_path"], "scip_experiment_parmaters.set"))
+    model.readParams(os.path.join(paths["experiment_params"], "scip_experimental_settings.set"))
+    model.readProblem(filename=os.path.join(paths["model_files"], paths["model"])])
     return model
 
 def run_trial(paths):
     model = scip_parameter_parser_and_model_loader(model, paths)
-    non_linear_solver = SciPy_paramater_parser(paths)
-    experiment_parameters = experiment_parameters_parser(paths)
-    seapa = OptimalCut(algorithm_name=experiment_parameters["algorithm"], cut_score=experiment_parameters["cutScore"], num_bkpt=experiment_parameters["num_bkpt"], multithread=False, prove_seperator=experiment_parameters["prove_seperator"], show_proof = False, epsilon=experiment_parameters["model_epsilon"], M = experiment_parameters["liptitz_constant"], nonlinear_backend=non_linear_solver)
-     
-    # add seperator to model
-    # load data
-    # solve model
-    # record data
-    # write data
-    # First line is experiment parameters; it should contain spepific pamaters, name of model file, ect. 
-    # rest is data; i should collect the .out file
-
+    # non_linear_solver = SciPy_paramater_parser(paths)
+    experiment_parameters = json.loads(os.path.join(paths["experiment_trial_programs_path"], "experiment_parameters.json")
+    seapa = OptimalCut(algorithm=experiment_parameters["algorithm"], backend=experiment_parameters["backend"], cut_score=experiment_parameters["cut_score"],  epsilon=experiment_parameters["epsilon"], M=experiment_parameters["M"], max_cgf_solver_time=experiment_parameters["max_cgf_solver_time"], max_num_of_bkpts=experiment_parameters["max_num_of_bkpts"], multithread=experiment_parameters["multithread"],
+       prove_seperator=experiment_parameters["prove_seperator"] rel_tol=experiment_parameters["rel_tol"], show_proof=experiment_parameters["show_proof"])
+    model.includeSepa(sepa, "optimal_cut_exp", "exp_params:{experiment}", priority=1000, freq=1)
+    data_record = CutGapDataRecording(model, "optimal_cut_exp", experiment_parameters["max_number_of_cuts"])
+    model.includeEventhdlr(data_record, "record_gap_data", "Records dual gap data when optimal_cut_exp is called" )
+    model.optimize()
+    data_record.write_data(self, paths["data_target_path"])

@@ -3,34 +3,31 @@
 ##############################
 
 [experiment.settings]
-max_number_of_seperation_rounds = 1000
-write_cgf_log = true
 prove_seperator = false
 show_proof = false
-epsilon="10**-6"
+epsilon = "10**-6"
 M = "10**6"
-tol = "10**-6"
-max_cgf_solver_time_per_iter = 60
-paramaterized_problem_solver = "SciPy"
+rel_tol = "10**-3"
+max_cgf_solver_time = 5
+multithread = false
+paramaterized_solver = "SciPy" #this does nothing atm
+backend = "pplite"
 
 [experiment.parameters]
 algorithm = [ "bkpt_as_param", "full", "value_poly_lp"]
 
 [experiment.parameters.bkpt_as_param]
-number_of_cuts_at_root_node = [ 1, 10 ]
-number_of_cuts_at_subsequent_nodes = [ 1, 10 ]
-max_number_of_bkpts = [ 2, "experiment.settings.epsilon" ] # modeled by to setting epsilon = 1/(max_num_bkpt), controls size of sub problem
 cut_score = [ "steepest", "parallelism" ] # parallelism here is equivalent to value poly lp
+max_num_of_bkpts = [ 2, "int(1/epsilon)" ] # modeled by to setting epsilon = 1/(max_num_bkpt), controls size of sub problem
+max_number_of_cuts = [ 1, 10 ]
+
 
 [experiment.parameters.full]
 cut_score = [ "steepest", "parallelism" ] 
-max_number_of_bkpts = [ 2, 4 ]
-number_of_cuts_at_root_node = [ 1, 10 ]
-number_of_cuts_at_subsequent_nodes = [ 1, 10 ]
+max_num_of_bkpts = [ 2, 4 ]
+max_number_of_cuts = [ 1, 10 ]
 
 [experiment.parameters.value_poly_lp]
-number_of_cuts_at_root_node = [ 1, 10 ]
-number_of_cuts_at_subsequent_nodes = [ 1, 10 ]
-max_number_of_bkpts = [ 2, "experiment.settings.epsilon" ] # modeled by to setting epsilon = 1/(max_num_bkpt), controls size of sub problem
-cut_score = [ "parallelism", "2*parallelism" ]
-
+cut_score = [ "parallelism", "2*parallelism" ] 
+max_num_of_bkpts = [ 2, "int(1/epsilon)" ] # modeled by to setting epsilon = 1/(max_num_bkpt), controls size of sub problem
+max_number_of_cuts = [ 1, 10 ]

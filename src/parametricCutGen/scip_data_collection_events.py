@@ -6,7 +6,8 @@ import logging
 class CutGapDataRecording(Eventhdlr):
     def __init__(self, model, cut_name, number_of_cuts):
         Eventhdlr.__init__(model)
-        self.gap_data = {}
+        self.number_of_cuts = number_of_cuts
+        self.gap_data = {cut_name}
 
     def eventinit(self):
         self.model.catchEvent(SCIP_EVENTTYPE.ROWADDEDSEPA, self)
@@ -18,10 +19,11 @@ class CutGapDataRecording(Eventhdlr):
     def eventexec(self, event):
         name = self.model.Event.getName()
         if name not in self.gap_data.keys():
-            #
             self.gap_data[name] = [abs(self.model. self.model.getPrimalbound()- self.model.getDualbound())/abs(self.model.getPrimalbound())]
         else:
             self.gap_data[name].append(abs(self.model. self.model.getPrimalbound()- self.model.getDualbound())/abs(self.model.getPrimalbound()))
-        if cut_name in self. gap_data.keys():
-            if len(self.gap_data[cut_name]) == number_of_cuts:
-                model.interruptSolve() # Once we've collected enough data, exit.
+        if self.gap_data[self.tracked_cut_name] == self.number_of_cuts:
+            model.interruptSolve()
+
+    def write_data(self, path):
+        return self.gap_data

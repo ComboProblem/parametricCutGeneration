@@ -34,6 +34,7 @@ srun --partition=$PARTITION --account=$CLUSTER_ACCOUNT --ntasks=1 --cpus-per-tas
 }
 
 run_experiments(){
+# for loop over somethign like a star command see example  Text/*/simple.sh see about globbing
 
 }
 
