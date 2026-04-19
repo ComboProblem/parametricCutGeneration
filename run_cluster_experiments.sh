@@ -34,8 +34,15 @@ srun --partition=$PARTITION --account=$CLUSTER_ACCOUNT --ntasks=1 --cpus-per-tas
 }
 
 run_experiments(){
-# for loop over somethign like a star command see example  Text/*/simple.sh see about globbing
-
+# The number of * is based on the number of non global parameters for experiments
+# Currently the directory paths represent algorithm/cut_score/max_number_of_bkpts/max_number_of_cuts/
+# see fun:setup_experiment_paths in setup_experiments.py 
+for experiment in $PARAMETRIC_EXPS_BASE/*/*/*/*/TrialPrograms/run_trails.sh;
+do 
+    chmod +x $experiment
+    echo "Dispatching trial runs for $experiment."
+    ./$experiment
+done
 }
 
 main(){
@@ -44,6 +51,7 @@ source "./src/Experiments/source/cluster_environment.sh"
 file_system_setup()
 get_models()
 check_apptainer()
+run_experiments()
 }
 
 main()
