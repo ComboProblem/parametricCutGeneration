@@ -1,0 +1,386 @@
+from cutgeneratingfunctionology.igp import *
+from minimalFunctionCache.utils import minimal_function_cache_info
+from exceptions import *
+import logging
+import time
+
+
+# Defines cut scores and abstract base class.
+
+cut_score_logger  = logging.getLogger(__name__)
+
+class abstractCutScore:
+    r"""
+    Abstract class for cut optimization objective functions aka cut scores.
+    Named after huersticis used to evaluate a cuts effectiveness.
+    """
+    @classmethod
+    def __init__(cls, **kwrds):
+        pass
+
+    def cut_score(cls, cut, mip_obj):
+        r"""
+        A(n) (assumed to be) smooth function from cutSpace to RR where cutSpace = {(\pi(bar a_ij))_{j\in N} : pi in PiMin}.
+
+        Suppose that R is a ring such that either QQ subseteq R subseteq RR or  R is a ring that can
+        coercied to a ring R' wiht QQ subseteq R' subseteq RR.
+
+        cut_score should use sagemath types to ensure generating a separating cut.
+
+        input: cut, mip_obj
+        cut: A list of length n-m of elements of R representing a proposed cut to a given MIP.
+        mip_obj: A list of elements of R representing the MIPs objective function.
+
+        output: an element of R.
+
+        EXAMPLES:
+        """
+        raise NotImplementedError
+
+    def cut_score_grad(cls, cut, mip_obj):
+        r"""
+        The gradient of the cut score function.
+
+        input: cut, mip_obj
+        cut: A list of length n-m of elements of R representing a proposed cut to a given MIP.
+        mip_obj: A list of elements of R representing the MIPs objective function.
+
+        output: A vector of length n-m of elements of R.
+        """
+        raise NotImplementedError
+
+    def cut_score_hess(cls, cut, mip_obj):
+        r"""
+        The hessian of the cut score function.
+
+        input: cut, mip_obj
+        cut: A list of length n-m of elements of R representing a proposed cut to a given MIP.
+        mip_obj: A list of elements of R representing the MIPs objective function.
+
+        output: An n-m by n-m matrix of elements of R.
+        """
+        raise NotImplementedError
+
+    def is_linear(cls):
+        r"""
+        Returns True if the cut score (when defined on the parameterized cut space) is linear.
+        """
+        raise NotImplementedError
+    
+    def get_linear_solver_form(cls, solver):
+        r"""
+        Returns a valid input linear function for solver to use in an LP problem.
+        """
+        raise NotImplementedError
+
+class cutScore:
+    """
+    cutScore is objective function used in the cutOptimzationProblem.
+
+    cutScore is a(n) (assumed to be) smooth function from cutSpace to RR where cutSpace = {(\pi_p(bar a_ij))_{j\in N} : pi in PiMin<=k}.
+
+    cutScore's domain is the cutSpace written in terms of the parameterization of PiMin<=k.
+
+    cutScore comes with optional methods to provide first and second order information to solvers.
+    """
+    @staticmethod
+    def __classcall__(cls, name=None, **kwrds):
+        r"""
+        Input normalization of cutScore class.
+        """
+        if name == "parallelism" or name is None:
+            return super().__classcall__(cls, cut_score=Parallelism)
+        if name == "steepest_direction" or name is None:
+            return super().__classcall__(cls, cut_score=SteepestDirection)
+        if issubclass(name, abstractCutScore):
+            return super().__classcall__(cls, cut_score=name, **kwrds)
+        else:
+            raise TypeError("Use a predefined cut scoring method or use custom instance of abstractCutScore.")
+
+    def __init__(self, cutscore, **kwrds):
+        r"""
+        Initialize the paramatrized cut scoring function.
+
+        Data used with cutScore is managed by the methods that call cutScore.
+        """
+        self._cut_score = cutscore(**kwrds)
+        super().__init__()
+        self._MIP_objective = None
+        self._MIP_row = None
+        self._sage_to_solver_type = None
+        self._timer = None
+        self._feasible_point = None
+        self._rel_tol = 10**-6
+        self._prev_result = None
+        if "obj_type" in kwrds.keys():
+            self._cut_obj_type = kwrds.keys()["obj_type"]
+        else:
+            self._cut_obj_type = "max"
+
+    def __call__(self, parameters):
+        r"""
+        Evaluate the cutScore.
+
+        parameters is a list like object of real numbers with even length of at most 2k.
+        parameters = (bkpt, val) represents a parameterized element of Pimin<=k by the breakpoint and value paramaterization.
+
+        EXAMPLES::
+
+        """
+        # It is necessary for frac_f to be converted to exact rational from the MIP.
+        if self._MIP_objective is None:
+            raise UnsetData("Set MIP_objective before use of CutScore.")
+        if self._MIP_row is None:
+            raise UnsetData("Set MIP_row before use of CutScore.")
+        if self._sage_to_solver_type is None:
+            raise UnsetData("Set sage_to_solver_type before use of CutScore.")
+        # To generate a seperator, we have to ensure, the function pi_parameters
+        # is minimal.
+        # parameters is given from some non linear solver and might not meet the conditions
+        # of minimality.
+        # validate_point will either give a point p = b,v which
+        # we believe to up to rounding and L.C. that pi_p is a minimal function in the current cell
+        # and satisfies the conditions of the model.
+        # or will raise an error
+        b, v = self.validate_point(parameters)
+        self.set_feasible_point(b+v)
+        pi = piecewise_function_from_breakpoints_and_values(b + [1], v + [0])
+        row_data = self.get_MIP_row()
+        sage_cut = [pi(fractional(QQ(bar_a_ij))) for bar_a_ij in row_data]
+        sage_mip_obj =  [QQ(bar_cj) for bar_cj in self._MIP_objective]
+        sage_result = self._cut_score.cut_score(sage_cut, sage_mip_obj)
+        if self.get_prev_result() is not None:
+            if abs(sage_result - self.get_prev_result())/sage_result < self._rel_tol:
+                cut_score_logger.debug(f"cutScore.__call__: Relalitve difference betweeen successive solutions is less than {self._rel_tol}. Stopping non-linear solver.")
+                raise SolverHalt
+            else:
+                self.set_prev_result(sage_result)
+        else:
+            self.set_prev_result(sage_result)
+        if self._timer is not None:
+            if self._timer.solver_time_out():
+                raise SolverTimeOut
+        return self.get_sage_to_solver_type()(sage_result)
+
+    @staticmethod
+    def grad(parameters):
+        """
+        Gradient of cutScore.
+        """
+        raise NotImplementedError
+        # return self._cut_score.cut_score_grad(sage_cut, sage_mip_obj)
+
+    @staticmethod
+    def hess(parameters):
+        raise NotImplementedError
+        # return self._cut_score.cut_score_hess(sage_cut, sage_mip_obj)
+
+### Get and set methods for communicating data between solvers.
+
+    def get_current_cell(self):
+        return self._cell
+
+    def get_espilon(self):
+        return self._espilon
+
+    def get_f_index(self):
+        return self._f_index
+
+    def get_f_trust(self):
+        return self._f_trust
+
+    def get_feasible_point(self):
+        return self._feasible_point
+
+    def get_lipschitz_constant(self):
+        return self._M
+
+    def get_MIP_obj(self):
+        return self._MIP_objective
+
+    def get_MIP_row(self):
+        """
+        For fixed row i of the corner polyhedron;  bar_i - (bar a_i)^T x_N
+        """
+        return self._MIP_row
+
+    def get_prev_result(self):
+        return self._prev_result
+
+    def get_sage_to_solver_type(self):
+        """
+        Defined in the cutGenerationSolver. This method is only intended to be set and unset by solving
+        routines in cutGenerationSolver.
+        """
+        return self._sage_to_solver_type
+
+    def set_current_cell(self, cell):
+        self._cell = cell
+
+    def set_espilon(self, espilon):
+        self._espilon = espilon
+
+    def set_f_index(self, f_index):
+        self._f_index = f_index
+
+    def set_f_trust(self, f_trust):
+        self._f_trust = f_trust
+
+    def set_feasible_point(self, point):
+        self._feasible_point = point
+
+    def set_lipschitz_constant(self, M):
+        self._M = M
+
+    def set_MIP_row(self, new_row):
+        self._MIP_row = new_row
+
+    def set_MIP_obj(self, new_objective):
+        """
+        Use reduced costs of the basis relaxation here.
+
+        This should be a vector of length n-m for the problem.
+        """
+        self._MIP_objective = new_objective
+
+    def set_prev_result(self, prev_result):
+        self._prev_result = prev_result
+
+    def set_rel_tol(self, rel_tol):
+        self._rel_tol = rel_tol
+
+    def set_sage_to_solver_type(self, new_conversion):
+        self._sage_to_solver_type = new_conversion
+
+    def set_timer(self, timer):
+        """
+        Timer is a class which keeps track of the solvers time spent solving the cgf problem.
+        """
+        self._timer = timer
+
+    def cut_obj_type(self):
+         self._cut_obj_type
+
+    def validate_point(self, point, poly_check=False):
+        """
+        Take parameters from the non linear solver and returns point that satisfies the minimal function model.
+        """
+        # This enforces the "manifoldness" of PWL.
+        epsilon = self._espilon
+        M = self._M
+        f_index = self._f_index
+        f_trust = fractional(QQ(self._f_trust))
+        cell = self._cell
+        sage_point = [QQ(x) for x in point]
+        n = int(len(point)/2)
+        b, v  = [b for b in  sage_point[:n]], [v for v in sage_point[n:]]
+        # model assumptions
+        # we log all errors
+        # breakpoints should be in [0,1)
+        # values should be in [0,1]
+        for i in range(n):
+            if (b[i] < 0 or b[i] + epsilon >= 1) and i != f_index:
+                raise SolverHalt(f"validate_point: breakpoint lambda_{i} < 0 or lambda_{i}>= 1; lambda_{i}=={b[i]}")
+            if (v[i] < 0 or v[i] + epsilon > 1) and i != f_index:
+                raise SolverHalt(f"validate_point: breakpoint gamma_{i} < 0 or gamma_{i}>= 1; gamma_{i}=={v[i]}")
+        # pi(0) = 0, pi(f) = 1
+        if abs(b[0]-0) <= epsilon:
+            b[0] = 0
+        else:
+            cut_score_logger.debug(f"validate_point: breakpoint lambda_0 >0, point: {point}, cell: {cell}")
+            raise SolverHalt("breakpoint lambda_0 >0")
+        if abs(v[0]-0) <= epsilon:
+            v[0] = 0
+        else:
+            cut_score_logger.debug(f"validate_point: breakpoint gamma_0 >0, point: {point}, cell: {cell}")
+            raise SolverHalt("value gamma_0 >0")
+        # bkpt[f_index] == f
+        if abs(b[f_index] - f_trust) <= epsilon:
+            b[f_index] = f_trust
+        else:
+            cut_score_logger.debug(f"validate_point: breakpoint lambda_{f_index} != {f_trust}: point: {point}, cell: {cell}")
+            raise SolverHalt(f"breakpoint lambda_{f_index} != {f_trust}")
+        # pi_p(f) = 1
+        if abs(v[f_index] - 1) <= epsilon:
+            v[f_index] = 1
+        else:
+            cut_score_logger.debug(f"validate_point: breakpoint lambda_{f_index} !=1: point: {point}, cell: {cell}")
+            raise SolverHalt(f"value gamma_{f_index} != 1")
+        # lipschitz constant and continuity.
+        for i in range(n-1):
+            if 0 < b[i+1]-b[i]<= epsilon:
+                if abs(v[i+1]-v[i]) >= epsilon*M:
+                    # potential discontunity
+                    # not in (epsilon_i, M) - charts.
+                    cut_score_logger.debug(f"validate_point: Solution does not have lipschitz constant {M}: point: {point}, cell: {cell}")
+                    raise SolverHalt(f"Solution does not have lipschitz constant {M}")
+                # lambda_i+1 = lambda_i
+                b[i+1] = b[i]
+                # continuity, gamma_i =gamma_i+1
+                if abs(v[i+1]-v[i]) > epsilon:
+                    raise SolverHalt
+                v[i+1] = v[i]
+                # when epsilon <= v[i+1]-v[i] < epsilon*M
+                # the solution exists in the intersection of the epsilon,M
+                # can assume the values are correct/as intended
+        # the last breakpoint should be distinct from 1 to enforce a breakpoint sequence.
+        if 1-b[n-1] <= epsilon:
+            cut_score_logger.debug(f"validate_point: breakpoint lambda_{n-1} >= 1: point: {point}, cell: {cell}")
+            raise SolverHalt(f"breakpoint lambda_{n-1} >= 1")
+        # b,v are rounded values.
+        # ensure constraints hold
+        # For a polynomial constraint, poly, assume poly(b,v) = 0. Then poly(point) = poly((b,v) + O(epsilon))
+        # implies  poly(point) = poly((b,v) + O(epsilon)) = poly(b,v) + total_deriv(poly)( point)+O(epspsilon)) + O(epsilon^2)
+        # We treat episolon^2 -> 0. Hence poly(point) = total_deriv(poly)(O(epsilon)) <= total_deriv(poly)(epsilon)
+        # the above does not hold, then poly(b,v) != 0.
+        # note the polynomial parents should have variable names lambda_0,...,lambda_n-1, gamma_0,...,gamma_n-1 in order.
+        # hence we can lazily evaluate polys from the cell.
+        # this does not seem to make a difference so it should be safe to ignore.
+        if poly_check:
+            # Set poly_check to true to prove within the chart used, the constraints hold.
+            for poly in cell.lt_poly():
+                poly_val = poly(b+v)
+                if poly_val < -1*epsilon:
+                    pass
+                else:
+                    if poly_val < 0:
+                        # see if poly_val == 0 or not.
+                        # assume poly(b+v) == 0.
+                        if abs(poly(sage_point)) <= sum(abs(grad(sage_point)) for grad in poly.gradient())*epsilon:
+                            cut_score_logger.debug(f"validate_point: {poly} evaluated at {b+v} == 0 when {poly} evaluated at {b+v} should be < 0: point: {point}, cell: {cell}")
+                            raise SolverHalt(f"{poly} evaluated at {b+v} == 0 when {poly} evaluated at {b+v} should be < 0")
+                        else:
+                            pass
+                    else:
+                        cut_score_logger.debug(f"validate_point: {poly} evaluated at {b+v} >= 0 when {poly} evaluated at {b+v} should be < 0: point: {point}, cell: {cell}")
+                        raise SolverHalt(f"{poly} evaluated at {b+v} >= 0 when {poly} evaluated at {b+v} should be < 0")
+            for poly in cell.le_poly():
+                if poly(b+v) > 0:
+                    cut_score_logger.debug(f"validate_point: {poly} evaluated at {b+v} >0 when {poly} evaluated at {b+v} should be <=  0: point: {point}, cell: {cell}")
+                    raise SolverHalt(f"{poly} evaluated at {b+v} >0 when {poly} evaluated at {b+v} should be <= 0")
+
+            for poly in cell.eq_poly():
+                if abs(poly(b+v)) >= epsilon or abs(poly(sage_point)) > sum(abs(grad(sage_point)) for grad in poly.gradient())*epsilon:
+                    cut_score_logger.debug(f"validate_point:{poly} evaluated at {b+v} != 0 when {poly} evaluated at {b+v} should be == 0: point: {point}, cell: {cell}")
+                    raise SolverHalt(f"{poly} evaluated at {b+v} != 0 when {poly} evaluated at {b+v} should be == 0")
+        return b,v
+
+
+class Parallelism(abstractCutScore):
+    """
+    Normalized cut parallelism score.
+    """
+    def cut_score(cls, cut, mip_obj):
+        obj_norm = vector(mip_obj).norm()
+        cut_norm = vector(cut).norm()
+        dot_product = vector(mip_obj).row()*vector(cut).column()
+        return (dot_product[0]/(obj_norm*cut_norm))[0]
+
+
+class SteepestDirection(abstractCutScore):
+    """
+    Steepest direction score.
+    """
+    def cut_score(cls, cut, mip_obj):
+        dot_product = vector(mip_obj).row()*vector(cut).column()
+        return dot_product[0][0]

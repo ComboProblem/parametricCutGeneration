@@ -1,6 +1,5 @@
 import logging
 import os
-import tomllib
 
 def parse_logger(name):
     """Set logger information from cluster paramters files."""
