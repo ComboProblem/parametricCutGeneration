@@ -122,19 +122,14 @@ class cutGenerationProblem:
     
     TESTS::
     >>> from parametricCutGen.cut_generation_problem import *
-    >>> cgp_full = cutGenerationProblem(algorithm="full", backend="pplite", cut_score="steepest_direction", max_num_of_bkpts=4); cgp_full
-    Cut generation problem using algorithm full.
-    >>> cgp_bkpt_as_param = cutGenerationProblem(algorithm="bkpt_as_param", backend="pplite", cut_score="steepest_direction", max_num_of_bkpts=100); cgp_bkpt_as_param
-    Cut generation problem using algorithm bkpt_as_param.
-    >>> cgp_value_poly_lp = cutGenerationProblem(algorithm="value_poly_lp", backend="pplite", cut_score="steepest_direction", max_num_of_bkpts=100); cgp_value_poly_lp
-    Cut generation problem using algorithm cgp_value_poly_lp.
+    >>> cgp_full = cutGenerationProblem(algorithm="full", backend="pplite", cut_score="steepest_direction", max_num_of_bkpts=4)
+    >>> cgp_bkpt_as_param = cutGenerationProblem(algorithm="bkpt_as_param", backend=None, cut_score="steepest_direction", max_num_of_bkpts=100)
+    >>> cgp_value_poly_lp = cutGenerationProblem(algorithm="value_poly_lp", backend=None, cut_score="steepest_direction", max_num_of_bkpts=100)
     >>> binvarow = [3.2, 4.1, 5.6, .2]
     >>> binvc = [1.2, 4.4, 5.6, -.1]
     >>> f = 1.8 # aka b of the row
     >>> cgp_full.solve(binvarow, binvc, f)
-    
     >>> cgp_bkpt_as_param.solve(binvarow, binvc, f)
-
     >>> cgp_value_poly_lp.solve(binvarow, binvc, f)
     """
     def __init__(self, algorithm=None, backend=None, cut_score=None,  epsilon=None, M = None, max_cgp_solver_time=None, max_num_of_bkpts=2, multithread=False,
@@ -191,7 +186,6 @@ class cutGenerationProblem:
         Interprets the options and calls the correct solving algorithm.
 
         Passes any instructions to the underlying solver.
-
         """
         # assume MIP is a scip model; really we should be passing in and LP relaxation with variable information here.
         # The cut generation problem
@@ -268,6 +262,18 @@ class cutGenerationProblem:
                                 solution_for_best_result = point
                                 rep_elem_of_best_cell = b+v
                         break
+                    except SolverTolReached:
+                        value_for_cell = self._cut_score.get_prev_result()
+                        if solution_for_best_result is None:
+                            best_result = value_for_cell
+                            solution_for_best_result = point
+                            rep_elem_of_best_cell = b+v
+                        if best_value < value_for_cell:
+                            best_value = value_for_cell
+                            solution_for_best_result = point
+                            rep_elem_of_best_cell = b+v
+                        break
+                            
                     # When a SolverHalt is encountered
                     # the NL solver has violated a constraint of the model or minimality
                     # within the cell. Use the last known feasible point from the
@@ -276,18 +282,10 @@ class cutGenerationProblem:
                     try:
                         value_for_cell = self._cut_score(point)
                         continue_solving = True                      
-                    except SolverTimeOut: # check solver halts errors, it seems to be getting raised on test values
+                    except SolverTimeOut or SolverTolReached: # check solver halts errors, it seems to be getting raised on test values
                         self._cut_score.set_timer(None)
-                        value_for_cell = self._cut_score(point)
+                        value_for_cell = self._cut_score.get_prev_result()
                         continue_solving =  False
-                    if solution_for_best_result is None:
-                        best_result = value_for_cell
-                        solution_for_best_result = point
-                        rep_elem_of_best_cell = b+v
-                    if best_value < value_for_cell:
-                        best_value = value_for_cell
-                        solution_for_best_result = point
-                        rep_elem_of_best_cell = b+v
                     if not continue_solving:
                         break
             except EmptyBSA:
@@ -359,6 +357,8 @@ class cutGenerationProblem:
         try:
             result = self._solver.nonlinear_solve(cut_score, point, value_polyhedron_constraints)
         except SolverHalt:
+            pass
+        except SolverTolReached:
             pass
         except SolverTimeOut:
             self._cut_score.set_timer(None)

@@ -10,6 +10,10 @@ class SolverHalt(Exception):
     pass
 
 
+class SolverTolReached(Exception):
+    pass
+
+
 class SolverTimeOut(Exception):
     pass
 
