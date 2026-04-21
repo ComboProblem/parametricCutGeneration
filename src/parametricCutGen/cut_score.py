@@ -1,6 +1,6 @@
 from cutgeneratingfunctionology.igp import *
-from minimalFunctionCache.utils import minimal_function_cache_info
-from exceptions import *
+from .generic_solvers import cvxpyCutGenProblemSolverInterface
+from .execptions import *
 import logging
 import time
 
@@ -8,6 +8,7 @@ import time
 # Defines cut scores and abstract base class.
 
 cut_score_logger  = logging.getLogger(__name__)
+cut_score_logger.setLevel(logging.DEBUG)
 
 class abstractCutScore:
     r"""
@@ -67,7 +68,7 @@ class abstractCutScore:
         """
         raise NotImplementedError
     
-    def get_linear_solver_form(cls, solver):
+    def wrap_cut_score_to_solver_linear_objective(cls, solver):
         r"""
         Returns a valid input linear function for solver to use in an LP problem.
         """
@@ -88,23 +89,26 @@ class cutScore:
         r"""
         Input normalization of cutScore class.
         """
-        if name == "parallelism" or name is None:
+        cut_score_logger.debug(f"{name} of cutScore")
+        if name is None:
             return super().__classcall__(cls, cut_score=Parallelism)
-        if name == "steepest_direction" or name is None:
+        elif name == "parallelism":
+            return super().__classcall__(cls, cut_score=Parallelism)
+        elif name == "steepest_direction":
             return super().__classcall__(cls, cut_score=SteepestDirection)
-        if issubclass(name, abstractCutScore):
+        elif issubclass(name, abstractCutScore):
             return super().__classcall__(cls, cut_score=name, **kwrds)
         else:
             raise TypeError("Use a predefined cut scoring method or use custom instance of abstractCutScore.")
 
-    def __init__(self, cutscore, **kwrds):
+    def __init__(self, name=None, **kwrds):
         r"""
         Initialize the paramatrized cut scoring function.
 
         Data used with cutScore is managed by the methods that call cutScore.
         """
-        self._cut_score = cutscore(**kwrds)
-        super().__init__()
+        super().__init__(name=name)
+        self._cut_score = kwrds['cut_score']
         self._MIP_objective = None
         self._MIP_row = None
         self._sage_to_solver_type = None
@@ -375,6 +379,13 @@ class Parallelism(abstractCutScore):
         cut_norm = vector(cut).norm()
         dot_product = vector(mip_obj).row()*vector(cut).column()
         return (dot_product[0]/(obj_norm*cut_norm))[0]
+    
+    def is_linear(cls):
+        r"""
+        Returns True if the cut score (when defined on the parameterized cut space) is linear.
+        """
+        return False
+
 
 
 class SteepestDirection(abstractCutScore):
@@ -384,3 +395,19 @@ class SteepestDirection(abstractCutScore):
     def cut_score(cls, cut, mip_obj):
         dot_product = vector(mip_obj).row()*vector(cut).column()
         return dot_product[0][0]
+
+    def is_linear(cls):
+        r"""
+        Returns True if the cut score (when defined on the parameterized cut space) is linear.
+        """
+        return True
+    
+    def wrap_cut_score_to_solver_linear_objective(cls, solver, **kwds):
+        r"""
+        Returns a valid input linear function for solver to use in an LP problem.
+        """
+        if isinstance(cvxpyCutGenProblemSolverInterface, solver):
+            x = kwds['x']
+            cvxpy_objective = cp.Maximize(np.array(mip_obj) @ x)
+            return cvxpy_objective
+

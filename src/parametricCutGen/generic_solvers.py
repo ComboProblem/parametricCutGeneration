@@ -1,13 +1,14 @@
 from cutgeneratingfunctionology.igp import *
 from scipy.optimize import minimize, LinearConstraint, NonlinearConstraint
-from .exceptions import *
+from cvxpy import Variable, Minimize, Problem
+from .execptions import *
 import logging
 
 generic_solver_logger = logging.getLogger(__name__)
 
 class abstractCutGenProblemSolverInterface:
     r"""
-    Interfaces types from ``cutgeratingfunctionolgy`` to a specified solver.
+    Interfaces types from ``cutgeratingfunctionolgy`` to a specified generic solver which solves the real optimziation problem min f(x) s.t. g(x) <= 0; x\in R^n.
     """
     def __init__():
         pass
@@ -31,6 +32,8 @@ class abstractCutGenProblemSolverInterface:
         r"""
         Interface to solver's min/max f(x) s.t. Ax<=b.
 
+        constraints and objective should be of the solvers type.
+
         Should return optimal objective value, optimal objective solution, solver success, and solver_output
         """
         raise NotImplementedError
@@ -50,12 +53,11 @@ class abstractCutGenProblemSolverInterface:
         """
         raise NotImplementedError
 
+# TODO: typing of BSA; or write a verson which is typed. 
 
 class scipyCutGenProbelmSolverInterface(abstractCutGenProblemSolverInterface):
     """
-    Interfaces types and objects from ``cutgeneratingfunctiology`` to scipy.
-
-
+    Maps types and objects from ``cutgeneratingfunctiology`` to scipy.
     """
     @staticmethod
     def write_linear_constraints_from_bsa(bsa, epsilon=10**-9):
@@ -184,3 +186,75 @@ class scipyCutGenProbelmSolverInterface(abstractCutGenProblemSolverInterface):
         # be lazy and assume the_ring_element is something the converts to a rational number (or can be put into a floating point approximation).
         # this is a point where we lose the exactness of sage.
         return float(sage_ring_element)
+
+
+class cvxpyCutGenProblemSolverInterface(abstractCutGenProblemSolverInterface):
+    r"""
+    Maps types and objects from ``cutgeneratingfunctiology`` to cvxpy.
+    """
+    @staticmethod
+    def write_linear_constraints_from_bsa(bsa):
+        r"""
+        Given a BSA with only linear constraints, converts the bsa object into a format that the underlying solver can use.
+        """
+    def write_linear_constraints_from_bsa(bsa, epsilon=10**-9):
+        r"""
+        Given a BSA with only linear constraints, converts the bsa object into a format that the underlying solver can use.
+        """
+        # TODO:linear specialized code for linear BSAs?
+        x = cp.Variable(bsa.ambient_dim())
+        cons = []
+        for polynomial in bsa.eq_poly():
+            if polynomial.degree() != 1:
+                raise ValueError(f"Constraint {polynomial} == 0 is not linear.")
+            linear_coeffs = np.array([polynomial.coefficient(i) for i in polynomial.parent().gens()])
+            cons.append(linear_coeffs @ x == float(-1*polynomial.constant_coefficient()))
+        for polynomial in bsa.lt_poly():
+            if polynomial.degree() != 1:
+                raise ValueError(f"Constraint {polynomial} < 0 is not linear.")
+            linear_coeffs = np.array([polynomial.coefficient(i) for i in polynomial.parent().gens()])
+            cons.append(linear_coeffs @ x <= float(-1*polynomial.constant_coefficient() - epsilon))
+        for polynomial in bsa.le_poly():
+            if polynomial.degree() != 1:
+                raise ValueError(f"Constraint {polynomial} <= 0 is not linear.")
+            linear_coeffs = np.array([polynomial.coefficient(i) for i in polynomial.parent().gens()])
+            cons.append(linear_coeffs @ x <= float(-1*polynomial.constant_coefficient()))
+        if len(cons) != 0:
+            return cons, x
+        else:
+            raise ValueError(f"No constraints have been written.")        
+
+    @staticmethod
+    def write_nonlinear_constraints_from_bsa(bsa):
+        r"""
+        Given a BSA with non linear constraints, converts the bsa object into a format that the underlying solver can use.
+        """
+        raise NotImplementedError
+
+
+    @staticmethod
+    def lp_solve(constraints, objective,  **solver_options):
+        r"""
+        Interface to solver's min/max f(x) s.t. Ax<=b.
+
+        Should return optimal objective value, optimal objective solution, solver success, and solver_output.
+        """
+        x = solver_options['x']# intnded to be form the constraints x
+        prob = Problem(objective, constraints)
+        result = prob.solve()        
+        return prob.value, x.value, None, prob
+
+    @staticmethod
+    def nonlinear_solve(constraints, objective, **solver_options):
+        r"""
+        Interface to solver's min/max f(x) s.t. p_i(x) <= b_i, where p_i is a polynomial and at least 1 p_i has degree larger than 1.
+        """
+        raise NotImplementedError
+
+
+    @staticmethod
+    def sage_to_solver_type(sage_ring_element):
+        r"""
+        Return the correct solver type from a sage ring element.
+        """
+        raise NotImplementedError

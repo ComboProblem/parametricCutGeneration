@@ -1,9 +1,9 @@
 from cutgeneratingfunctionology.igp import *
 from minimalFunctionCache.utils import minimal_function_cache_info
 # the rational conversion QQ is imported from cutgeneratingfunctionology.
-from .exceptions import *
+from .execptions import *
 from .cut_score import cutScore
-from .generic_solvers import scipyCutGenProbelmSolverInterface
+from .generic_solvers import scipyCutGenProbelmSolverInterface, cvxpyCutGenProblemSolverInterface
 import logging
 import time
 
@@ -12,7 +12,7 @@ cut_selection_problem_logger.setLevel(logging.DEBUG)
 
 minimal_function_cashe_logging = True
 
-max_bkpts = max(minimal_function_cache_info()["avail_rep_elems"])
+avail_rep_elems = minimal_function_cache_info()["avail_rep_elems"]
 
 
 def find_f_index(min_pwl):
@@ -33,13 +33,18 @@ def sparse_enough_breakpoints(bkpt_old, epsilon):
     r"""
     Considers the space PWL(*<=n) and finds a point breakpoint seqeunce bkpt
     such that  ||bkpt_old - bkpt||_infty < epsilon and that  bkpt[i+1]-bkpt[i] > epsilon xor bkpt[i] = bkpt[i+1].
-    This imples that d((bkpt_old,f), (bktp,f))<espilon and bkpt is "sparse enough".
+    This imples that d((bkpt_old,f), (bktp,f))< espilon and bkpt is "sparse enough".
 
     INPUT:
     - breakpoint sequence
 
     OUTPUT:
     - breakpoint sequence such that bkpt[i+1]-bkpt[i] > epsilon xor bkpt[i] = bkpt[i+1].
+
+    TESTS::
+    >>> from parametricCutGen import *
+    >>> sparse_enough_breakpoints([0, 10**-7, 4/5], 10**-6)
+    [0, 4/5]
     """
     bkpt = list(tuple(bkpt_old)) # cheap way of deep copying lists
     for i in range(len(bkpt)-1):
@@ -92,27 +97,29 @@ class cutGenerationProblem:
     Option: multithread - notImplemented
     Option: prove_seperator - bool
     Option: epsilon - value to det
+
+    TESTS::
     """
-    def __init__(self, algorithm=None,backend=None, cut_score=None,  epsilon=10**-7, M = 10**7, max_cgf_solver_time=None, max_num_of_bkpts=None, multithread=False,
-        paramaterized_solver=None, prove_seperator=False, rel_tol=10**-6, show_proof=False):
+    def __init__(self, algorithm=None, backend=None, cut_score=None,  epsilon=None, M = None, max_cgf_solver_time=None, max_num_of_bkpts=2, multithread=False,
+        paramaterized_solver=None, prove_seperator=False, rel_tol=None, show_proof=False):
         if algorithm is None or algorithm.lower() == "full":
             self._algorithm = "full"
-            if num_bkpt is None or num_bkpt < 1 or num_bkpt > max_bkpts:
+            if max_num_of_bkpts not in avail_rep_elems:
                 raise ValueError(f"Incorrect number of breakpoints defined for full algorithm. 2 <= num_bkpt <= {max_bkpts}.")
-            self._cut_space = None
             self._solver = scipyCutGenProbelmSolverInterface
         elif algorithm.lower() == "bkpt_as_param":
             self._algorithm = "bkpt_as_param"
             self._solver = scipyCutGenProbelmSolverInterface
         elif algorithm.lower() == "value_poly_lp":
             self._algorithm = "value_poly_lp"
+            self._solver = cvxpyCutGenProblemSolverInterface
         else:
             raise ValueError("No other algorithms are supported at this time.")
         if cut_score is None:
-            self._cut_score = cutScore(SteepestDirection)
+            self._cut_score = cutScore()
         else:
             try:
-                self._cut_score = cutScore(cut_score)
+                self._cut_score = cutScore(name=cut_score)
             except NameError:
                 raise ValueError("Please provided a valid defined cutscore.")
         self._cut_score.set_sage_to_solver_type(self._solver.sage_to_solver_type)
@@ -361,20 +368,20 @@ class cutGenerationProblem:
         sparse_bkpt.sort()
         f_index = sparse_bkpt.index(frac_f)
         self._cut_score.set_f_index(f_index)
-        value_polyhedron_in_value_param_only =  value_nnc_polyhedron_.... (sparse_bkpt, f_index, backend=self._backend)
-        cut_selection_problem_logger.debug(f"Dim of value polyhedron :{value_polyhedron_in_value_param_only.upstairs().ambient_dim()}")
-        point = list(value_polyhedron.find_point())
-        linear_constraints =  self._solver.write_linear_constraints_from_bsa(value_polyhedron_in_value_param_only)
+        value_polyhedron_in_value_param_only = value_nnc_polyhedron_value_cords(sparse_bkpt, f_index, backend=self._backend)
+        cut_selection_problem_logger.debug(f"Dim of value polyhedron : {value_polyhedron_in_value_param_only.upstairs().ambient_dim()}")
+        linear_constraints, x =  self._solver.write_linear_constraints_from_bsa(value_polyhedron_in_value_param_only)
         if self._cut_score.is_linear():
-            objective = self._cut_score(self._solver)
+            objective = self._cut_score.wrap_cut_score_to_solver_linear_objective(self._solver, x=x)
         else:
             raise ValueError("This method only works for linear objective functions. Try using the bkpt_as_param algorithm.")
-        values = self._solver.solve(linear_constraints, objective)
-        point =  bkpt, values
+        obj_val, values, status, prob_res = self._solver.solve(linear_constraints, objective, x=x)
+        values = [QQ(v) for v in values]
+        point =  bkpt + values
         try:
             b, v = self._cut_score().validate_point(point)
         except SolverHalt:
-            # debug
+            cut_selection_problem_logger.debug(f"Point is not validated: {bkpt, values}")
             b = bkpt
             v = values
         pi_p = piecewise_function_from_breakpoints_and_values(b+[1], v+[0])
