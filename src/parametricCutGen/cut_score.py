@@ -1,30 +1,30 @@
+"""
+Defines cut scores available to the cut generation problem.
+"""
+
 from cutgeneratingfunctionology.igp import *
 from .generic_solvers import cvxpyCutGenProblemSolverInterface
 from .execptions import *
 import logging
 import time
 
-
-# Defines cut scores and abstract base class.
-
 cut_score_logger  = logging.getLogger(__name__)
-cut_score_logger.setLevel(logging.DEBUG)
+cut_score_logger.setLevel(logging.INFO)
 
 class abstractCutScore:
     r"""
     Abstract class for cut optimization objective functions aka cut scores.
-    Named after huersticis used to evaluate a cuts effectiveness.
+    Named after heuristics used to evaluate a cuts effectiveness.
     """
-    @classmethod
-    def __init__(cls, **kwrds):
+    def __init__(self):
         pass
-
-    def cut_score(cls, cut, mip_obj):
+        
+    def cut_score(cut, mip_obj):
         r"""
-        A(n) (assumed to be) smooth function from cutSpace to RR where cutSpace = {(\pi(bar a_ij))_{j\in N} : pi in PiMin}.
+        A(n) (assumed to be) smooth function from {(\pi(bar a_ij))_{j\in N} : pi in PiMin} to RR.
 
         Suppose that R is a ring such that either QQ subseteq R subseteq RR or  R is a ring that can
-        coercied to a ring R' wiht QQ subseteq R' subseteq RR.
+        coercied to a ring R' with QQ subseteq R' subseteq RR.
 
         cut_score should use sagemath types to ensure generating a separating cut.
 
@@ -33,12 +33,10 @@ class abstractCutScore:
         mip_obj: A list of elements of R representing the MIPs objective function.
 
         output: an element of R.
-
-        EXAMPLES:
         """
         raise NotImplementedError
 
-    def cut_score_grad(cls, cut, mip_obj):
+    def cut_score_grad(cut, mip_obj):
         r"""
         The gradient of the cut score function.
 
@@ -50,7 +48,7 @@ class abstractCutScore:
         """
         raise NotImplementedError
 
-    def cut_score_hess(cls, cut, mip_obj):
+    def cut_score_hess(cut, mip_obj):
         r"""
         The hessian of the cut score function.
 
@@ -62,13 +60,13 @@ class abstractCutScore:
         """
         raise NotImplementedError
 
-    def is_linear(cls):
+    def is_linear():
         r"""
         Returns True if the cut score (when defined on the parameterized cut space) is linear.
         """
         raise NotImplementedError
     
-    def wrap_cut_score_to_solver_linear_objective(cls, solver):
+    def wrap_cut_score_to_solver_linear_objective(solver, **kwrds):
         r"""
         Returns a valid input linear function for solver to use in an LP problem.
         """
@@ -83,32 +81,35 @@ class cutScore:
     cutScore's domain is the cutSpace written in terms of the parameterization of PiMin<=k.
 
     cutScore comes with optional methods to provide first and second order information to solvers.
+    
+    TESTS::
+    >>> from parametricCutGen.cut_score import *
+    >>> cs = cutScore("parallelism")
+    >>> cs
+    cut score Parallelism
+    >>> class TestCutScore(AbstractCutScore):
+            pass
+    >>> cutScore(TestCutScore)
+    cut score TestCutScore
     """
-    @staticmethod
-    def __classcall__(cls, name=None, **kwrds):
-        r"""
-        Input normalization of cutScore class.
-        """
-        cut_score_logger.debug(f"{name} of cutScore")
-        if name is None:
-            return super().__classcall__(cls, cut_score=Parallelism)
-        elif name == "parallelism":
-            return super().__classcall__(cls, cut_score=Parallelism)
-        elif name == "steepest_direction":
-            return super().__classcall__(cls, cut_score=SteepestDirection)
-        elif issubclass(name, abstractCutScore):
-            return super().__classcall__(cls, cut_score=name, **kwrds)
-        else:
-            raise TypeError("Use a predefined cut scoring method or use custom instance of abstractCutScore.")
-
-    def __init__(self, name=None, **kwrds):
+    def __init__(self, cut_score=None, **kwrds):
         r"""
         Initialize the paramatrized cut scoring function.
 
         Data used with cutScore is managed by the methods that call cutScore.
         """
-        super().__init__(name=name)
-        self._cut_score = kwrds['cut_score']
+        if cut_score is None:
+            self._cut_score = SCIP_STANDARD
+        elif cut_score is "parallelism":
+            self._cut_score = Parallelism
+        elif cut_score is "steepest_direction":
+            self._cut_score = SteepestDirection
+        elif cut_score is "2*steepest_direction":
+            self._cut_score = SteepestDirection2
+        elif issubclass(cut_score, abstractCutScore):
+            self._cut_score = cut_score
+        else:
+            raise TypeError("Use a predefined cut scoring method or use custom instance of abstractCutScore.")
         self._MIP_objective = None
         self._MIP_row = None
         self._sage_to_solver_type = None
@@ -121,15 +122,15 @@ class cutScore:
         else:
             self._cut_obj_type = "max"
 
+    def __repr__(self):
+        return f"cut score {self._cut_score.__name__}"
+
     def __call__(self, parameters):
         r"""
         Evaluate the cutScore.
 
         parameters is a list like object of real numbers with even length of at most 2k.
         parameters = (bkpt, val) represents a parameterized element of Pimin<=k by the breakpoint and value paramaterization.
-
-        EXAMPLES::
-
         """
         # It is necessary for frac_f to be converted to exact rational from the MIP.
         if self._MIP_objective is None:
@@ -138,14 +139,13 @@ class cutScore:
             raise UnsetData("Set MIP_row before use of CutScore.")
         if self._sage_to_solver_type is None:
             raise UnsetData("Set sage_to_solver_type before use of CutScore.")
-        # To generate a seperator, we have to ensure, the function pi_parameters
+        # To generate a separator, we have to ensure, the function pi_parameters
         # is minimal.
         # parameters is given from some non linear solver and might not meet the conditions
         # of minimality.
         # validate_point will either give a point p = b,v which
         # we believe to up to rounding and L.C. that pi_p is a minimal function in the current cell
-        # and satisfies the conditions of the model.
-        # or will raise an error
+        # and satisfies the conditions of the model or will raise an error.
         b, v = self.validate_point(parameters)
         self.set_feasible_point(b+v)
         pi = piecewise_function_from_breakpoints_and_values(b + [1], v + [0])
@@ -153,6 +153,8 @@ class cutScore:
         sage_cut = [pi(fractional(QQ(bar_a_ij))) for bar_a_ij in row_data]
         sage_mip_obj =  [QQ(bar_cj) for bar_cj in self._MIP_objective]
         sage_result = self._cut_score.cut_score(sage_cut, sage_mip_obj)
+        self._sage_cut = sage_cut
+        self._sage_mip_obj = sage_mip_obj
         if self.get_prev_result() is not None:
             if abs(sage_result - self.get_prev_result())/sage_result < self._rel_tol:
                 cut_score_logger.debug(f"cutScore.__call__: Relalitve difference betweeen successive solutions is less than {self._rel_tol}. Stopping non-linear solver.")
@@ -167,17 +169,18 @@ class cutScore:
         return self.get_sage_to_solver_type()(sage_result)
 
     @staticmethod
-    def grad(parameters):
+    def grad(self):
         """
-        Gradient of cutScore.
+        Gradient of cutScore. This method should only be called after a __call__ has been made to cutScore.
         """
-        raise NotImplementedError
-        # return self._cut_score.cut_score_grad(sage_cut, sage_mip_obj)
+        return self._cut_score.cut_score_grad(self._sage_cut, self._sage_mip_obj)
 
     @staticmethod
-    def hess(parameters):
-        raise NotImplementedError
-        # return self._cut_score.cut_score_hess(sage_cut, sage_mip_obj)
+    def hess(self):
+        """
+        Hessian of cutScore. This method should only be called after a __call__ has been made to cutScore.
+        """
+        return self._cut_score.cut_score_hess(self._sage_cut, self._sage_mip_obj)
 
 ### Get and set methods for communicating data between solvers.
 
@@ -374,35 +377,34 @@ class Parallelism(abstractCutScore):
     """
     Normalized cut parallelism score.
     """
-    def cut_score(cls, cut, mip_obj):
+    def cut_score(self, cut, mip_obj):
         obj_norm = vector(mip_obj).norm()
         cut_norm = vector(cut).norm()
         dot_product = vector(mip_obj).row()*vector(cut).column()
         return (dot_product[0]/(obj_norm*cut_norm))[0]
     
-    def is_linear(cls):
+    def is_linear(self):
         r"""
         Returns True if the cut score (when defined on the parameterized cut space) is linear.
         """
         return False
 
 
-
 class SteepestDirection(abstractCutScore):
     """
     Steepest direction score.
     """
-    def cut_score(cls, cut, mip_obj):
+    def cut_score(cut, mip_obj):
         dot_product = vector(mip_obj).row()*vector(cut).column()
         return dot_product[0][0]
 
-    def is_linear(cls):
+    def is_linear():
         r"""
         Returns True if the cut score (when defined on the parameterized cut space) is linear.
         """
         return True
     
-    def wrap_cut_score_to_solver_linear_objective(cls, solver, **kwds):
+    def wrap_cut_score_to_solver_linear_objective(solver, **kwds):
         r"""
         Returns a valid input linear function for solver to use in an LP problem.
         """
@@ -411,3 +413,33 @@ class SteepestDirection(abstractCutScore):
             cvxpy_objective = cp.Maximize(np.array(mip_obj) @ x)
             return cvxpy_objective
 
+class SteepestDirection2(abstractCutScore):
+    """
+    Steepest direction score.
+    """
+    def cut_score(cut, mip_obj):
+        dot_product = 2*vector(mip_obj).row()*vector(cut).column()
+        return dot_product[0][0]
+
+    def is_linear():
+        r"""
+        Returns True if the cut score (when defined on the parameterized cut space) is linear.
+        """
+        return True
+    
+    def wrap_cut_score_to_solver_linear_objective(solver, **kwds):
+        r"""
+        Returns a valid input linear function for solver to use in an LP problem.
+        """
+        if isinstance(cvxpyCutGenProblemSolverInterface, solver):
+            x = kwds['x']
+            cvxpy_objective = cp.Maximize(np.array(mip_obj) @ x)
+            return cvxpy_objective
+
+
+class SCIP_STANDARD(abstractCutScore):
+    """
+    
+    """
+    def cut_score(cut, mip_obj):
+        raise NotImplementedError

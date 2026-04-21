@@ -6,9 +6,11 @@ import logging
 
 generic_solver_logger = logging.getLogger(__name__)
 
+# TODO: Make base classes actually base classes rather than super classing things. This applies for cut_score module too.
+
 class abstractCutGenProblemSolverInterface:
     r"""
-    Interfaces types from ``cutgeratingfunctionolgy`` to a specified generic solver which solves the real optimziation problem min f(x) s.t. g(x) <= 0; x\in R^n.
+    Interfaces types from ``cutgeratingfunctionolgy`` to a specified generic solver which solves the real optimization problem min f(x) s.t. g(x) <= 0; x\in R^n.
     """
     def __init__():
         pass
@@ -53,7 +55,7 @@ class abstractCutGenProblemSolverInterface:
         """
         raise NotImplementedError
 
-# TODO: typing of BSA; or write a verson which is typed. 
+# TODO: typing of BSA; or write a version which is typed. 
 
 class scipyCutGenProbelmSolverInterface(abstractCutGenProblemSolverInterface):
     """
