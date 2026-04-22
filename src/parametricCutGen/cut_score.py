@@ -9,7 +9,25 @@ import logging
 import time
 
 cut_score_logger  = logging.getLogger(__name__)
-cut_score_logger.setLevel(logging.INFO)
+cut_score_logger.setLevel(logging.DEBUG)
+
+def pwl_with_value_parameters_and_bkpts_fixed(bkpt, f_index, log_paramateric_real_field=False, log_pw_functions=False):
+    n = len(bkpt)
+    if not log_paramateric_real_field:
+        parametric_logging_level = logging.getLogger("cutgeneratingfunctionology.igp.parametric").getEffectiveLevel()
+        logging.getLogger("cutgeneratingfunctionology.igp.parametric").setLevel(logging.ERROR)
+    if not log_pw_functions:
+        pw_logging_level = logging.getLogger("cutgeneratingfunctionology.igp.functions").getEffectiveLevel()
+        logging.getLogger("cutgeneratingfunctionology.igp.functions").setLevel(logging.ERROR)
+    assert(n >= 2)
+    assert(f_index >= 1)
+    assert(f_index <= n - 1)
+    if not isinstance(bkpt, list):
+        bkpt = list(bkpt)
+    coord_names = ['gamma'+str(i) for i in range(n)]
+    K = PolynomialRing(QQ, names=coord_names, order='lex')
+    vals = [0] + [K.gens()[i] if i != f_index else 1  for i in range(1,n)]
+    return piecewise_function_from_breakpoints_and_values(bkpt + [1],  vals + [0], merge=False)
 
 class abstractCutScore:
     r"""
@@ -409,9 +427,18 @@ class SteepestDirection(abstractCutScore):
         r"""
         Returns a valid input linear function for solver to use in an LP problem.
         """
-        if isinstance(cvxpyCutGenProblemSolverInterface, solver):
+        if issubclass(solver, cvxpyCutGenProblemSolverInterface):
+            from cvxpy import Maximize
             x = kwds['x']
-            cvxpy_objective = cp.Maximize(np.array(mip_obj) @ x)
+            bkpt = kwds['bkpt']
+            f_index = kwds['f_index']
+            mip_obj = kwds['mip_obj']
+            pi = pwl_with_value_parameters_and_bkpts_fixed(bkpt, f_index)
+            cut_score_in_value_params = sum(pi(fractional(c)) for c in mip_obj)
+            coord_names = ['gamma'+str(i) for i in range(len(bkpt))]
+            param_obj = np.array([cut_score_in_value_params.coefficient(cut_score_in_value_params.parent().gens_dict()[name]) for name in coord_names])
+            cut_score_logger.debug(f"Objective inputs... {param_obj, x}")
+            cvxpy_objective = Maximize(param_obj @ x)
             return cvxpy_objective
 
 class SteepestDirection2(abstractCutScore):
@@ -432,9 +459,17 @@ class SteepestDirection2(abstractCutScore):
         r"""
         Returns a valid input linear function for solver to use in an LP problem.
         """
-        if isinstance(cvxpyCutGenProblemSolverInterface, solver):
+        if issubclass(solver, cvxpyCutGenProblemSolverInterface):
+            from cvxpy import Maximize
             x = kwds['x']
-            cvxpy_objective = cp.Maximize(np.array(mip_obj) @ x)
+            bkpt = kwds['bkpt']
+            f_index = kwds['f_index']
+            mip_obj = kwds['mip_obj']
+            pi = pwl_with_value_parameters_and_bkpts_fixed(bkpt, f_index)
+            cut_score_in_value_params = sum(pi(fractional(c)) for c in mip_obj)
+            coord_names = ['gamma'+str(i) for i in range(len(bkpt))]
+            param_obj = np.array([cut_score_in_value_params.coefficient(cut_score_in_value_params.parent().gens_dict()[name]) for name in coord_names])
+            cvxpy_objective = Maximize(2*param_obj @ x)
             return cvxpy_objective
 
 

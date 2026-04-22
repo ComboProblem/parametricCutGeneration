@@ -123,14 +123,14 @@ class cutGenerationProblem:
     TESTS::
     >>> from parametricCutGen.cut_generation_problem import *
     >>> cgp_full = cutGenerationProblem(algorithm="full", backend="pplite", cut_score="steepest_direction", max_num_of_bkpts=4)
-    >>> cgp_bkpt_as_param = cutGenerationProblem(algorithm="bkpt_as_param", backend=None, cut_score="steepest_direction", max_num_of_bkpts=100)
-    >>> cgp_value_poly_lp = cutGenerationProblem(algorithm="value_poly_lp", backend=None, cut_score="steepest_direction", max_num_of_bkpts=100)
+    >>> cgp_bkpt_as_param = cutGenerationProblem(algorithm="bkpt_as_param", backend="pplite", cut_score="steepest_direction", max_num_of_bkpts=100)
+    >>> cgp_value_poly_lp = cutGenerationProblem(algorithm="value_poly_lp", backend="pplite", cut_score="steepest_direction", max_num_of_bkpts=100)
     >>> binvarow = [3.2, 4.1, 5.6, .2]
     >>> binvc = [1.2, 4.4, 5.6, -.1]
     >>> f = 1.8 # aka b of the row
-    >>> cgp_full.solve(binvarow, binvc, f)
-    >>> cgp_bkpt_as_param.solve(binvarow, binvc, f)
-    >>> cgp_value_poly_lp.solve(binvarow, binvc, f)
+    >>> sol_is_gmic = cgp_full.solve(binvarow, binvc, f)
+    >>> g = cgp_bkpt_as_param.solve(binvarow, binvc, f)
+    >>> h = cgp_value_poly_lp.solve(binvarow, binvc, f) # ||h-g||_infty is small. Since cutScore is bypassed, h doesn't have strong numerical properties in terms of the feasiblity.
     """
     def __init__(self, algorithm=None, backend=None, cut_score=None,  epsilon=None, M = None, max_cgp_solver_time=None, max_num_of_bkpts=2, multithread=False,
         paramaterized_solver=None, prove_seperator=False, rel_tol=None, show_proof=False):
@@ -193,7 +193,7 @@ class cutGenerationProblem:
             cgf = self._algorithm_full_space(binvarow, binvc, f)
         elif self._algorithm == "bkpt_as_param":
             cgf = self._algorithm_bkpt_as_param(binvarow, binvc, f)
-        elif self._algorithm_full_space == "value_poly_lp":
+        elif self._algorithm == "value_poly_lp":
             cgf = self._algorithm_value_poly_lp(binvarow, binvc, f)
         return cgf
 
@@ -347,7 +347,7 @@ class cutGenerationProblem:
         sparse_bkpt.sort()
         f_index = sparse_bkpt.index(frac_f)
         self._cut_score.set_f_index(f_index)
-        value_polyhedron =  value_nnc_polyhedron(sparse_bkpt, f_index, backend=self._backend)
+        value_polyhedron = value_nnc_polyhedron(sparse_bkpt, f_index, backend=self._backend)
         cut_generation_problem_logger.debug(f"Dim of value polyhedron :{value_polyhedron.upstairs().ambient_dim()}")
         point = list(value_polyhedron.find_point())
         # initialize a feasible point for the cut scoring function to remember.
@@ -382,8 +382,6 @@ class cutGenerationProblem:
         problem_timer = cgpTimer(self._max_cgp_solver_time)
         self._cut_score.set_timer(problem_timer)
         frac_f = fractional(QQ(f))
-        def cut_score(params):
-            return self._cut_score(params)
         symmetrized_bkpts = [0, frac_f]
         # symmertized breakpoints should all be in [0,1)
         for b in binvarow:
@@ -413,26 +411,27 @@ class cutGenerationProblem:
             return pi_p
         # ensure a breakpoint sequence is given
         sparse_bkpt.sort()
+        sparse_bkpt = [QQ(bi) for bi in sparse_bkpt]
         f_index = sparse_bkpt.index(frac_f)
         self._cut_score.set_f_index(f_index)
-        value_polyhedron_in_value_param_only = value_nnc_polyhedron_value_cords(sparse_bkpt, f_index, backend=self._backend)
-        cut_generation_problem_logger.debug(f"Dim of value polyhedron : {value_polyhedron_in_value_param_only.upstairs().ambient_dim()}")
-        linear_constraints, x =  self._solver.write_linear_constraints_from_bsa(value_polyhedron_in_value_param_only)
-        if self._cut_score.is_linear():
-            objective = self._cut_score.wrap_cut_score_to_solver_linear_objective(self._solver, x=x)
+        value_polyhedron = value_nnc_polyhedron_value_cords(sparse_bkpt, f_index, backend=self._backend)
+        cut_generation_problem_logger.debug(f"Dim of value polyhedron : {value_polyhedron.upstairs().ambient_dim()}")
+        linear_constraints, x =  self._solver.write_linear_constraints_from_bsa(value_polyhedron)
+        if self._cut_score._cut_score.is_linear():
+            objective = self._cut_score._cut_score.wrap_cut_score_to_solver_linear_objective(self._solver, mip_obj=binvc, x=x, bkpt=sparse_bkpt, f_index=f_index)
         else:
             raise ValueError("This method only works for linear objective functions. Try using the bkpt_as_param algorithm.")
-        obj_val, values, status, prob_res = self._solver.solve(linear_constraints, objective, x=x)
+        obj_val, values, status, prob_res = self._solver.lp_solve(linear_constraints, objective, x=x)
         values = [QQ(v) for v in values]
-        point =  bkpt + values
+        point = sparse_bkpt+values
+        self._cut_score.set_current_cell(value_polyhedron)
         try:
-            b, v = self._cut_score().validate_point(point)
+            b, v = self._cut_score.validate_point(point)
         except SolverHalt:
-            cut_generation_problem_logger.debug(f"Point is not validated: {bkpt, values}")
-            b = bkpt
+            b = sparse_bkpt
             v = values
         pi_p = piecewise_function_from_breakpoints_and_values(b+[1], v+[0])
-        log_problem_result(bkpt_result, val_result, binvarow, binvc, f)
+        log_problem_result(b, v, binvarow, binvc, f)
         if self._prove_seperator:
             res = minimality_test(pi_p, self._show_proof) # add someway to log certificates.
             cut_generation_problem_logger.info(f"Minimality of cgf: {res}")

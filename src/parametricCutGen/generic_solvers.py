@@ -204,7 +204,7 @@ class cvxpyCutGenProblemSolverInterface(abstractCutGenProblemSolverInterface):
         Given a BSA with only linear constraints, converts the bsa object into a format that the underlying solver can use.
         """
         # TODO:linear specialized code for linear BSAs?
-        x = cp.Variable(bsa.ambient_dim())
+        x = Variable(bsa.ambient_dim())
         cons = []
         for polynomial in bsa.eq_poly():
             if polynomial.degree() != 1:
