@@ -1,4 +1,4 @@
-from pyscipopt import Model, SCIP_EVENTTYPE
+from pyscipopt import Model, SCIP_EVENTTYPE, Eventhdlr
 import logging
 
 # when a primal dual gap is updated recorded when  a seperator is called.

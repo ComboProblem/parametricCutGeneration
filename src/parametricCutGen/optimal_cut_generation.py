@@ -1,5 +1,6 @@
 from cutgeneratingfunctionology.igp import *
 from minimalFunctionCache.utils import minimal_function_cache_info
+from .cut_generation_problem import *
 # the rational conversion QQ is imported from cutgeneratingfunctionology.
 from scipy.optimize import minimize, LinearConstraint, NonlinearConstraint
 from pyscipopt import Model, Sepa, SCIP_RESULT
@@ -8,12 +9,17 @@ import time
 
 
 class OptimalCut(Sepa):
-    def __init__(self, algorithm=None, backend=None, cut_score=None,  epsilon=10**-7, M=10**7, max_cgf_solver_time=None, max_num_of_bkpts=None, multithread=False,
-        paramaterized_solver=None, prove_seperator=False, rel_tol=10**-6, show_proof=False):
+    def __init__(self, algorithm=None, backend=None, cut_score=None,  epsilon=None, M = None, max_cgp_solver_time=None, max_num_of_bkpts=2, multithread=False,
+        paramaterized_solver=None, prove_seperator=False, rel_tol=None, show_proof=False):
+        """
+        TESTS::
+        from parametricCutGen.optimal_cut_generation import OptimalCut
+        sepa = OptimalCut()
+        """
         # the signature here needs to be the same as the cgp.
         # TODO: Change this to a keywords type intitalization.
         self.ncuts = 0
-        self.cgp = cutGenerationProblem(algorithm=algorithm, backend=backend, cut_score=cut_score,  epsilon=epsilon, M=M, max_cgf_solver_time=max_cgf_solver_time, max_num_of_bkpts=max_num_of_bkpts, multithread=multithread,
+        self.cgp = cutGenerationProblem(algorithm=algorithm, backend=backend, cut_score=cut_score,  epsilon=epsilon, M=M, max_cgp_solver_time=max_cgp_solver_time, max_num_of_bkpts=max_num_of_bkpts, multithread=multithread,
         paramaterized_solver=paramaterized_solver, prove_seperator=prove_seperator, rel_tol=rel_tol, show_proof=show_proof)
 # Adapted from the example in 
     def getOptimalCutFromRow(self, cols, rows, binvrow, binvarow, primsol, pi_p):
