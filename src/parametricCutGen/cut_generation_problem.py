@@ -148,7 +148,7 @@ class cutGenerationProblem:
         else:
             raise ValueError("No other algorithms are supported at this time.")
         if cut_score is None:
-            self._cut_score = cutScore()
+            self._cut_score = cutScore("steepest_direction")
         else:
             try:
                 self._cut_score = cutScore(cut_score=cut_score)

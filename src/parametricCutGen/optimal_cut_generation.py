@@ -9,12 +9,15 @@ import time
 
 
 class OptimalCut(Sepa):
-    def __init__(self, algorithm=None, backend=None, cut_score=None,  epsilon=None, M = None, max_cgp_solver_time=None, max_num_of_bkpts=2, multithread=False,
+    def __init__(self, algorithm=None, backend=None, cut_score=None,  epsilon=None, M = None, max_cgp_solver_time=None, max_num_of_bkpts=4, multithread=False,
         paramaterized_solver=None, prove_seperator=False, rel_tol=None, show_proof=False):
         """
         TESTS::
-        from parametricCutGen.optimal_cut_generation import OptimalCut
-        sepa = OptimalCut()
+        >>> from parametricCutGen.optimal_cut_generation import OptimalCut
+        >>> from pyscipopt import Model
+        >>> model = Model()
+        >>> sepa = OptimalCut()
+        >>> model.includeSepa(sepa, "optimal_cut", "gmic equiv", priority=1000, freq=1)
         """
         # the signature here needs to be the same as the cgp.
         # TODO: Change this to a keywords type intitalization.
@@ -84,7 +87,7 @@ class OptimalCut(Sepa):
                         return pi_p.functions()[-1](x)
                     else:
                         return pi_p.functions()[0](x)
-                cutelem = float(psi(fractional(QQ)(rowelem)))
+                cutelem = float(psi(fractional(QQ(rowelem))))
             # cut is define when variables are in [0, infty). Translate to general bounds
             if not scip.isZero(cutelem):
                 if col.getBasisStatus() == "upper":
@@ -131,7 +134,7 @@ class OptimalCut(Sepa):
                         return pi_p.functions()[-1](x)
                     else:
                         return pi_p.functions()[0](x)
-                cutelem = float(psi(fractional(QQ)(rowelem)))
+                cutelem = float(psi(fractional(QQ(rowelem))))
 
             # cut is define in original variables, so we replace slack by its definition
             if not scip.isZero(cutelem):
