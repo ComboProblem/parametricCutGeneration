@@ -211,6 +211,7 @@ class cutGenerationProblem:
         best_value = -1*np.inf
         # else: #To do implement minimize options
         #     raise NotImplementedError
+        best_result = None
         solution_for_best_result = None
         if self._cut_space is None: # load the semi algebraic descriptions.
              self._cut_space = PiMinContContainer(self._max_num_of_bkpts, backend=self._backend)
@@ -269,7 +270,7 @@ class cutGenerationProblem:
                             solution_for_best_result = point
                             rep_elem_of_best_cell = b+v
                         if best_value < value_for_cell:
-                            best_value = value_for_cell
+                            best_result = value_for_cell
                             solution_for_best_result = point
                             rep_elem_of_best_cell = b+v
                         break
@@ -281,10 +282,26 @@ class cutGenerationProblem:
                     point = self._cut_score.get_feasible_point()
                     try:
                         value_for_cell = self._cut_score(point)
-                        continue_solving = True                      
+                        continue_solving = True
+                        if solution_for_best_result is None:
+                            best_result = value_for_cell
+                            solution_for_best_result = point
+                            rep_elem_of_best_cell = b+v
+                        if best_value < value_for_cell:
+                            best_result = value_for_cell
+                            solution_for_best_result = point
+                            rep_elem_of_best_cell = b+v
                     except SolverTimeOut or SolverTolReached: # check solver halts errors, it seems to be getting raised on test values
                         self._cut_score.set_timer(None)
                         value_for_cell = self._cut_score.get_prev_result()
+                        if solution_for_best_result is None:
+                            best_result = value_for_cell
+                            solution_for_best_result = point
+                            rep_elem_of_best_cell = b+v
+                        if best_value < value_for_cell:
+                            best_result = value_for_cell
+                            solution_for_best_result = point
+                            rep_elem_of_best_cell = b+v
                         continue_solving =  False
                     if not continue_solving:
                         break
@@ -293,6 +310,7 @@ class cutGenerationProblem:
         # If result is None, the solver has failed to find any meaningful result or the computation has timed out.
         # There should always be a result and the SolverError should never be raised unless the computation has timed out.
         if best_result is None:
+            cut_generation_problem_logger.debug("s")
             raise SolverError("The solver has failed, we should always get a result from the computation. Try increasing the time allowed for the solver to run.")
         val_result = [QQ(gamma_i) for gamma_i in solution_for_best_result[self._max_num_of_bkpts:]]
         bkpt_result = [QQ(lambda_i) for lambda_i in solution_for_best_result[:self._max_num_of_bkpts]]

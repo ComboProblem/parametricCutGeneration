@@ -173,7 +173,7 @@ class cutScore:
         sage_result = self._cut_score.cut_score(sage_cut, sage_mip_obj)
         self._sage_cut = sage_cut
         self._sage_mip_obj = sage_mip_obj
-        if self.get_prev_result() is not None:
+        if self.get_prev_result() is not None and sage_result != 0:
             if abs(sage_result - self.get_prev_result())/sage_result < self._rel_tol:
                 cut_score_logger.debug(f"cutScore.__call__: Relative distance between successive solutions is less than {self._rel_tol}. Stopping non-linear solver.")
                 self.set_prev_result(sage_result)
