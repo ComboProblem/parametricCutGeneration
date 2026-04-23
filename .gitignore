@@ -1,7 +1,7 @@
 #ignore build stuff
 build/
 .git/
-parametricCutGeneration.egg-info/
+src/parametricCutGeneration.egg-info/
 # Ignore slurm output files
 *.out
 # Ignore sif images
