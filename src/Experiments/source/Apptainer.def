@@ -1,0 +1,20 @@
+Bootstrap: docker
+From: ubuntu:24.04
+
+%post -c /bin/bash
+    apt-get update -y
+    apt-get install -y pip git gh python3.12-full
+    apt-get clean
+    git clone --branch MinFunStable https://github.com/ComboProblem/cutgeneratingfunctionology.git
+    cd cutgeneratingfunctionology
+    python3 -m venv /cgf-venv/venv
+    source /cgf-venv/venv/bin/activate
+    pip install ".[passagemath]"
+    pip install pplitepy
+    git clone https://github.com/ComboProblem/MinimalFunctionCache.git
+    cd MinimalFunctionCache
+    pip install .
+    cd ..
+
+%environment
+   source /cgf-venv/venv/bin/activate

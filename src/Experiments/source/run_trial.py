@@ -31,4 +31,4 @@ def run_trial(paths):
     data_record = CutGapDataRecording(model, "optimal_cut_exp", experiment_parameters["max_number_of_cuts"])
     model.includeEventhdlr(data_record, "record_gap_data", "Records dual gap data when optimal_cut_exp is called" )
     model.optimize()
-    data_record.write_data(self, paths["data_target_path"])
+    data_record.write_data(paths["data_target_path"])
