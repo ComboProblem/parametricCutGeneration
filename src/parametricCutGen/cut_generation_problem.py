@@ -12,9 +12,9 @@ import logging
 import time
 
 cut_generation_problem_logger = logging.getLogger(__name__)
-cut_generation_problem_logger.setLevel(logging.DEBUG)
+cut_generation_problem_logger.setLevel(logging.ERROR)
 
-minimal_function_cashe_logging = True
+# minimal_function_cashe_logging = True
 
 avail_rep_elems = minimal_function_cache_info()["avail_rep_elems"]
 
@@ -38,6 +38,8 @@ def sparse_enough_breakpoints(bkpt_old, epsilon):
     Considers the space PWL(*<=n) and finds a point breakpoint sequence bkpt
     such that  ||bkpt_old - bkpt||_infty < epsilon and that  bkpt[i+1]-bkpt[i] > epsilon xor bkpt[i] = bkpt[i+1].
     This implies that d((bkpt_old,f), (bktp,f))< espilon and bkpt is "sparse enough".
+
+    Picking epsilon to be a "correct value" models a maximum number of breakpoints in algorithms "bkpt_as_param" and "value_poly_lp".  
 
     INPUT:
     - breakpoint sequence
@@ -105,7 +107,7 @@ class cutGenerationProblem:
     
     The problem assumes that all minimal functions belong to a family (epsilon, M) charts.
 
-    The cgp options are listed below.
+    The cgp optional keywords are listed below.
 
     :algorithm: - str(full), str(bkpt_as_param), str(value_poly_lp)
     :backend: - None or str(pplite)
@@ -113,7 +115,7 @@ class cutGenerationProblem:
     :epsilon: - Chart epsilon value, real number > 0. 
     :M: -  Chart lipschitz constant, real number > 0.
     :max_cgp_solver_time: - Optimal real clock time limit for solving problem. Takes positive values.
-    :max_num_of_bkpts: - integer >= 2, maximum number of breakpoints a minimal function is allowed to have. Enforcement changes by algorithm.
+    :max_num_of_bkpts: - integer >= 2, maximum number of breakpoints a minimal function is allowed to have.
     :multithread: - bool, Not implemented, intended for "full" algorithm.
     :paramaterized_solver: - None or a (subclass of)  :class:`abstractCutGenProblemSolverInterface`.
     :prove_seperator: - bool, proves every function used is actually a function that can be used to generate a separator.
@@ -122,7 +124,7 @@ class cutGenerationProblem:
     
     TESTS::
     >>> from parametricCutGen.cut_generation_problem import *
-    >>> cgp_full = cutGenerationProblem(algorithm="full", backend="pplite", cut_score="steepest_direction", max_num_of_bkpts=4)
+    >>> cgp_full = cutGenerationProblem(algorithm="full", backend="pplite", cut_score="steepest_direction", max_num_of_bkpts=2)
     >>> cgp_bkpt_as_param = cutGenerationProblem(algorithm="bkpt_as_param", backend="pplite", cut_score="steepest_direction", max_num_of_bkpts=100)
     >>> cgp_value_poly_lp = cutGenerationProblem(algorithm="value_poly_lp", backend="pplite", cut_score="steepest_direction", max_num_of_bkpts=100)
     >>> binvarow = [3.2, 4.1, 5.6, .2]
@@ -130,10 +132,23 @@ class cutGenerationProblem:
     >>> f = 1.8 # aka b of the row
     >>> sol_is_gmic = cgp_full.solve(binvarow, binvc, f)
     >>> g = cgp_bkpt_as_param.solve(binvarow, binvc, f)
-    >>> h = cgp_value_poly_lp.solve(binvarow, binvc, f) # ||h-g||_infty is small. Since cutScore is bypassed, h doesn't have strong numerical properties in terms of the feasiblity.
+    >>> h = cgp_value_poly_lp.solve(binvarow, binvc, f) # ||h-g||_infty is small. Since cutScore is bypassed, h doesn't have strong numerical properties in terms of the feasiblity. # note write about this.
     """
-    def __init__(self, algorithm=None, backend=None, cut_score=None,  epsilon=None, M = None, max_cgp_solver_time=None, max_num_of_bkpts=2, multithread=False,
+    # *, makes arguments keyword only. Order shouldn't matter in terms of inputs. The problem will write it's own parameters into a cgp_params dict.
+    def __init__(self, *, algorithm=None, backend=None, cut_score=None,  epsilon=None, M = None, max_cgp_solver_time=None, max_num_of_bkpts=2, multithread=False,
         paramaterized_solver=None, prove_seperator=False, rel_tol=None, show_proof=False):
+        """
+        TESTS::
+        >>> from parametricCutGen.cut_generation_problem import *
+        >>> cgp_full = cutGenerationProblem(algorithm="full", backend="pplite", cut_score="steepest_direction", max_num_of_bkpts=4)
+        >>> cgp_full_params_test = cgp_full.get_cgp_input_parameters()
+        >>> cgp_full_test = cutGenerationProblem(**cgp_full_params_test)
+        >>> cgp_full_test is cgp_full
+        False
+        """
+        self._cgp_input_parameters = {**locals()} # copy input parameters; only inital inputs here.
+        self._cgp_input_parameters.pop("self") # This is required to ensure that when parameters are reused for initlaziation, problems doens't arise.
+        # TODO: Implement a way so that cgps with the same parameter are the same object; maybe. 
         if algorithm is None or algorithm.lower() == "full":
             self._algorithm = "full"
             if max_num_of_bkpts not in avail_rep_elems:
@@ -460,3 +475,9 @@ class cutGenerationProblem:
         # For future use.
         raise NotImplementedError
 
+    
+    def get_cgp_input_parameters(self):
+        """
+        Returns a dictionary parameters used to initalize the cut generation problem.
+        """
+        return self._cgp_input_parameters

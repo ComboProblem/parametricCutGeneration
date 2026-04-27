@@ -4,27 +4,48 @@ from .cut_generation_problem import *
 # the rational conversion QQ is imported from cutgeneratingfunctionology.
 from scipy.optimize import minimize, LinearConstraint, NonlinearConstraint
 from pyscipopt import Model, Sepa, SCIP_RESULT
+import json
 import logging
+import os
 import time
 
+optimal_cut_logger = logging.getLogger(__name__)
+
+# Adapted from the example in the docs. https://pyscipopt.readthedocs.io/en/latest/tutorials/separator.html
 
 class OptimalCut(Sepa):
-    def __init__(self, algorithm=None, backend=None, cut_score=None,  epsilon=None, M = None, max_cgp_solver_time=None, max_num_of_bkpts=4, multithread=False,
-        paramaterized_solver=None, prove_seperator=False, rel_tol=None, show_proof=False):
+    def __init__(self, *, write_mip_and_cut=False, file_name_base="OptimalCutData", number_of_cuts=None, cgp_kwds=None, paths=None):
         """
         TESTS::
         >>> from parametricCutGen.optimal_cut_generation import OptimalCut
         >>> from pyscipopt import Model
         >>> model = Model()
-        >>> sepa = OptimalCut()
-        >>> model.includeSepa(sepa, "optimal_cut", "gmic equiv", priority=1000, freq=1)
+        >>> sepa = OptimalCut() # gmic by default
+        >>> model.includeSepa(sepa, "optimal_cut", "full space gmic", priority=1000, freq=1)
+        >>> cgp_kwds = {"algorithm":"bkpt_as_param"}
+        >>> other_sepa = OptimalCut(cgp_kwds=cgp_kwds)
+        >>> model.includeSepa(other_sepa, "optima_cut", "bkpt as param gmic", priority=1000, freq=1)
         """
-        # the signature here needs to be the same as the cgp.
-        # TODO: Change this to a keywords type intitalization.
         self.ncuts = 0
-        self.cgp = cutGenerationProblem(algorithm=algorithm, backend=backend, cut_score=cut_score,  epsilon=epsilon, M=M, max_cgp_solver_time=max_cgp_solver_time, max_num_of_bkpts=max_num_of_bkpts, multithread=multithread,
-        paramaterized_solver=paramaterized_solver, prove_seperator=prove_seperator, rel_tol=rel_tol, show_proof=show_proof)
-# Adapted from the example in 
+        self.nseperating_cuts = 0
+        self.write_mip_and_cut = write_mip_and_cut # writes mip, cut, and metadata used to generate/assess the cut such as row, optimal cut initalization prameters, paths to problem and cut, .
+        self.file_name_base = file_name_base
+        if paths is None:
+            self.mip_and_cut_write_path = ""
+            self.metadata_write_path = ""
+        else:
+            try:
+                if self.write_mip_and_cut:
+                    self.mip_and_cut_write_path = paths["mip_and_cut_write_path"]
+                    self.metadata_write_path = paths["metadata_write_path"]
+            except KeyError:
+                optimal_cut_logger.debug("paths does not contain keyword \"cgp_mip_data_dir\". Writing to current directory.")
+                self.mip_and_cut_write_path = "" # write to current directory
+        if cgp_kwds is None:
+            self.cgp = cutGenerationProblem()
+        else:    
+            self.cgp = cutGenerationProblem(**cgp_kwds)
+
     def getOptimalCutFromRow(self, cols, rows, binvrow, binvarow, primsol, pi_p):
         """ Given the row (binvarow, binvrow) of the tableau, computes optimized cut.
 
@@ -207,7 +228,7 @@ class OptimalCut(Sepa):
                     primsol = cols[c].getPrimsol()
                     assert scip.getSolVal(None, var) == primsol
 
-                    if 0.005 <= scip.frac(primsol) <= 1 - 0.005:
+                    if 0.005 <= scip.frac(primsol) <= 1 - 0.005: # make into a parameter?
                         tryrow = True
 
             # generate the cut!
@@ -242,17 +263,34 @@ class OptimalCut(Sepa):
                 # Only take efficacious cuts, except for cuts with one non-zero coefficient (= bound changes)
                 # the latter cuts will be handled internally in sepastore.
                 if cut.getNNonz() == 1 or scip.isCutEfficacious(cut):
-
                     # flush all changes before adding the cut
                     scip.flushRowExtensions(cut)
-
+                    if self.write_mip_and_cut:
+                        # a jason file?  probally. 
+                        metadata = self.cgp.get_cgp_parameters() | {"cut_on_row": i, "cut_number":self.ncuts, "mip_base_path":os.path.join(self.mip_and_cut_write_path, f"{self.file_name_base}_MIP_base_{self.ncuts}.mps"), "cut_path": os.path.join(self.mip_and_cut_write_path, f"{self.file_name_base}_cut_number_{self.ncuts}.mps")}
+                        self.model.writeMIP(metadata["mip_base_path"]) # snapshot of MIP
                     infeasible = scip.addCut(cut, forcecut=True)
+                    if self.write_mip_and_cut:
+                        self.model.writeMIP(metadata["cut_path"]) # I should write somethign custom to jsut write a single mps line which represents the cut. Then later, I can join it to the model for more effiecnt compuation. For now we get somethign that should in theory work.
                     self.ncuts += 1
-
                     if infeasible:
-                       result = SCIP_RESULT.CUTOFF
+                        result = SCIP_RESULT.CUTOFF
+                        if self.write_mip_and_cut:
+                            metadata = metadata | {"result":"cutoff"}
                     else:
-                       result = SCIP_RESULT.SEPARATED
+                        # Cut was found to be useful; write data and log information as necessary
+                        # log result
+                        result = SCIP_RESULT.SEPARATED
+                        if self.write_mip_and_cut:
+                            metadata = metadata | {"result":"seperated"}
+                    if self.write_mip_and_cut:
+                        with open(os.paths.join(self.metadata_write_path, f"{self.file_name_base}_metadata_{self.ncuts}.json")) as metadata_json:
+                            json.dump(metadata, metadata_json)
                 scip.releaseRow(cut)
 
         return {"result": result}
+
+        def get_ncuts(self):
+            return self.ncuts
+
+
