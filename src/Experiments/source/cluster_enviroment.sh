@@ -7,7 +7,7 @@ export PARTITION=your_partition
 export SETUP_MEM=1GB
 export SETUP_TIME=10 # in minutes
 
-# PATHS
+# EXPERIMENT_PATHS
 export APPTAINER_DEF_PATH="src/Experiments/source/Apptainer.def"
 export OPTIMAL_CUT_CONTAINER="src/Experiments/source/optimal_cut.sif" 
 export PARAMETRIC_EXPS_BASE="src/Experiments/ConductedExperiments"

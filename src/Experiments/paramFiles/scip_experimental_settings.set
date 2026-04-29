@@ -18,7 +18,7 @@ separating/maxaddrounds = 1
 separating/maxstallrounds = 1
 # maximal number of consecutive separation rounds without objective or integrality improvement in the root node (-1: no additional restriction)
 # [type: int, advanced: FALSE, range: [-1,2147483647], default: 10]
-sseparating/maxstallroundsroot = 10
+separating/maxstallroundsroot = 10
 
 
 # maximal relative distance from current node's dual bound to primal bound compared to best node's dual bound for applying separation (0.0: only on current best node, 1.0: on all nodes)

@@ -75,14 +75,14 @@ def write_trials_for_experiments(paths, experiment):
     # setup paths
     paths = setup_experiment_paths(paths, experiment, global_settings)
     setup_experiments_logger.info(f"Writing config file for {experiment}")
-    with open(os.path.join(paths["trial_programs"], "experiment_parameters.json")) as exp_config:
+    with open(os.path.join(paths["trial_programs"], "experiment_parameters.json"), "w") as exp_config:
         json.dump(experiment | global_settings, exp_config)
     setup_experiments_logger.info(f"Writing trials for experiment with parameters {experiment}")
     # main loop
     trial_number = 0
     for model_file in os.listdir(paths["model_files"]):
         trial_file_name = f"trial_{trial_number}.sh"
-        with open(os.path.join(paths["trial_programs"], trial_file_name), w) as trial_file:
+        with open(os.path.join(paths["trial_programs"], trial_file_name), "w") as trial_file:
             trial_file.write("#!/bin/bash\n")
             trial_file.write("source cluster_environment.sh\n")
             trial_file.write(f"export EXPERIMENT_TRIAL_PROGRAMS_PATH={paths["trial_programs"]}\n") # contains experiment_parameters.json
@@ -101,7 +101,7 @@ def write_trials_for_experiments(paths, experiment):
         run_trials.write("chmod +x \"$TRIAL_FILES_TO_RUN\\trial_$SLURM_ARRAY_TASK_ID.sh\"\n")
         run_trials.write(".\\$TRIAL_FILES_TO_RUN\\trial_$SLURM_ARRAY_TASK_ID.sh\"\n")
         run_trials.write(f"sbatch array=0-$NUMBER_OF_TRIALS account=$CLUSTER_ACCOUNT partition=$PARTITION time=$TRIAL_TIME:00 mem=$TRIAL_MEM {os.path.joint(paths["trial_programs"], "trial_$SLURM_ARRAY_TASK_ID.sh"}") 
-
+ 
 def __main__():
     paths = validate_paths(_shell_paths, setup_experiments_logger)
     experiments, global_settings = setup_parametric_experiments(paths)

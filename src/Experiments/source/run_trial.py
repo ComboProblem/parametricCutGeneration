@@ -24,9 +24,9 @@ def scip_parameter_parser_and_model_loader(paths):
 def run_trial(paths):
     model = scip_parameter_parser_and_model_loader(model, paths)
     # non_linear_solver = SciPy_paramater_parser(paths)
-    experiment_parameters = json.loads(os.path.join(paths["experiment_trial_programs_path"], "experiment_parameters.json")
-    seapa = OptimalCut(algorithm=experiment_parameters["algorithm"], backend=experiment_parameters["backend"], cut_score=experiment_parameters["cut_score"],  epsilon=experiment_parameters["epsilon"], M=experiment_parameters["M"], max_cgp_solver_time=experiment_parameters["max_cgp_solver_time"], max_num_of_bkpts=experiment_parameters["max_num_of_bkpts"], multithread=experiment_parameters["multithread"],
-       prove_seperator=experiment_parameters["prove_seperator"] rel_tol=experiment_parameters["rel_tol"], show_proof=experiment_parameters["show_proof"])
+    cgp_experiment_kwrds = json.loads(os.path.join(paths["experiment_trial_programs_path"], "experiment_parameters.json")
+    paths["metadata_write_path"]=path
+    seapa = OptimalCut(write_mip_and_cut=True, cgp_kwds=cgp_experiment_kwrds, paths=paths)
     model.includeSepa(sepa, "optimal_cut_exp", "exp_params:{experiment}", priority=1000, freq=1)
     data_record = CutGapDataRecording(model, "optimal_cut_exp", experiment_parameters["max_number_of_cuts"])
     model.includeEventhdlr(data_record, "record_gap_data", "Records dual gap data when optimal_cut_exp is called" )

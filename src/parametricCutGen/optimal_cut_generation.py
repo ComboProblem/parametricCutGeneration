@@ -10,11 +10,12 @@ import os
 import time
 
 optimal_cut_logger = logging.getLogger(__name__)
-
+# optimal_cut_logger.setLevel(logging.DEBUG)
 # Adapted from the example in the docs. https://pyscipopt.readthedocs.io/en/latest/tutorials/separator.html
 
+# write minimal example data collection gap problem issue/what i would need to do. 
 class OptimalCut(Sepa):
-    def __init__(self, *, write_mip_and_cut=False, file_name_base="OptimalCutData", number_of_cuts=None, cgp_kwds=None, paths=None):
+    def __init__(self, *, write_mip_and_cut=False, file_name_base="OptimalCutData", max_number_of_data_records=None, cgp_kwds=None, paths=None):
         """
         TESTS::
         >>> from parametricCutGen.optimal_cut_generation import OptimalCut
@@ -27,7 +28,7 @@ class OptimalCut(Sepa):
         >>> model.includeSepa(other_sepa, "optima_cut", "bkpt as param gmic", priority=1000, freq=1)
         """
         self.ncuts = 0
-        self.nseperating_cuts = 0
+        self.max_number_of_data_records = max_number_of_data_records
         self.write_mip_and_cut = write_mip_and_cut # writes mip, cut, and metadata used to generate/assess the cut such as row, optimal cut initalization prameters, paths to problem and cut, .
         self.file_name_base = file_name_base
         if paths is None:
@@ -228,7 +229,7 @@ class OptimalCut(Sepa):
                     primsol = cols[c].getPrimsol()
                     assert scip.getSolVal(None, var) == primsol
 
-                    if 0.005 <= scip.frac(primsol) <= 1 - 0.005: # make into a parameter?
+                    if self.cgp._espilon <= scip.frac(primsol) <= 1 - self.cgp._espilon: # use cgp notion of 0/1
                         tryrow = True
 
             # generate the cut!
@@ -246,51 +247,50 @@ class OptimalCut(Sepa):
 
                 cutcoefs, cutrhs = self.getOptimalCutFromRow(cols, rows, binvrow, binvarow, primsol, cgf)
 
-                # add cut
+                if self.write_mip_and_cut:
+                    optimal_cut_logger.debug(f"snapshot of prev mip")
+                    metadata = {"cut_on_row": c if c >= 0 else -c-1, "cut_number":self.ncuts, "mip_base_path":os.path.join(self.mip_and_cut_write_path, f"{self.file_name_base}_MIP_base_{self.ncuts}.lp"), "cut_path": os.path.join(self.mip_and_cut_write_path, f"{self.file_name_base}_cut_number_{self.ncuts}.lp")}
+                    self.model.writeMIP(metadata["mip_base_path"]) # snapshot of MIP
+                    optimal_cut_logger.debug(f"Dump current metadata: {metadata}")
+
                 cut = scip.createEmptyRowSepa(self, "optimalcut%d_x%d"%(self.ncuts,c if c >= 0 else -c-1), lhs = None, rhs = cutrhs)
                 scip.cacheRowExtensions(cut)
-
+                if self.write_mip_and_cut:
+                    cut_as_lp_string = " "
                 for j in range(len(cutcoefs)):
-                    if scip.isZero(cutcoefs[j]): # maybe here we need isFeasZero
+                    if scip.isFeasZero(cutcoefs[j]): # maybe here we need isFeasZero
                         continue
                     scip.addVarToRow(cut, cols[j].getVar(), cutcoefs[j])
-
-                if cut.getNNonz() == 0:
-                    assert scip.isFeasNegative(cutrhs)
-                    return {"result": SCIP_RESULT.CUTOFF}
-
-
+                    if self.write_mip_and_cut:
+                        if  cutcoefs[j] > 0:
+                            cut_as_lp_string += f"+{cutcoefs[j]}"
+                        else:
+                            cut_as_lp_string += f"{cutcoefs[j]}"
+                        cut_as_lp_string += f" t_x{cols[j].getVar()} "
+                if self.write_mip_and_cut:
+                    cut_as_lp_string += f"<= {cutrhs}\n"
+                    cut_file = open(metadata["cut_path"],  "w")
+                    cut_file.write("optimalcut%d_x%d: "%(self.ncuts,c if c >= 0 else -c-1))
+                    cut_file.write(cut_as_lp_string)
+                    cut_file.close()
+                scip.flushRowExtensions(cut)
+                infeasible = scip.addCut(cut, forcecut=True)
+                if infeasible:
+                    result = SCIP_RESULT.CUTOFF
+                else:
+                    # Cut was found to be useful; write data and log information as necessary
+                    # log result
+                    result = SCIP_RESULT.SEPARATED
                 # Only take efficacious cuts, except for cuts with one non-zero coefficient (= bound changes)
                 # the latter cuts will be handled internally in sepastore.
-                if cut.getNNonz() == 1 or scip.isCutEfficacious(cut):
-                    # flush all changes before adding the cut
-                    scip.flushRowExtensions(cut)
-                    if self.write_mip_and_cut:
-                        # a jason file?  probally. 
-                        metadata = self.cgp.get_cgp_parameters() | {"cut_on_row": i, "cut_number":self.ncuts, "mip_base_path":os.path.join(self.mip_and_cut_write_path, f"{self.file_name_base}_MIP_base_{self.ncuts}.mps"), "cut_path": os.path.join(self.mip_and_cut_write_path, f"{self.file_name_base}_cut_number_{self.ncuts}.mps")}
-                        self.model.writeMIP(metadata["mip_base_path"]) # snapshot of MIP
-                    infeasible = scip.addCut(cut, forcecut=True)
-                    if self.write_mip_and_cut:
-                        self.model.writeMIP(metadata["cut_path"]) # I should write somethign custom to jsut write a single mps line which represents the cut. Then later, I can join it to the model for more effiecnt compuation. For now we get somethign that should in theory work.
-                    self.ncuts += 1
-                    if infeasible:
-                        result = SCIP_RESULT.CUTOFF
-                        if self.write_mip_and_cut:
-                            metadata = metadata | {"result":"cutoff"}
-                    else:
-                        # Cut was found to be useful; write data and log information as necessary
-                        # log result
-                        result = SCIP_RESULT.SEPARATED
-                        if self.write_mip_and_cut:
-                            metadata = metadata | {"result":"seperated"}
-                    if self.write_mip_and_cut:
-                        with open(os.paths.join(self.metadata_write_path, f"{self.file_name_base}_metadata_{self.ncuts}.json")) as metadata_json:
-                            json.dump(metadata, metadata_json)
+
+                    metadata = metadata | {"result": result}
+                    with open(os.path.join(self.metadata_write_path, f"{self.file_name_base}_metadata_{self.ncuts}.json"), "w") as metadata_json:
+                        json.dump(metadata, metadata_json)
+                self.ncuts += 1
                 scip.releaseRow(cut)
-
+                if self.ncuts > self.max_number_of_data_records:
+                    optimal_cut_logger.debug(f"ncuts:{self.ncuts}")
+                    scip.interruptSolve()
         return {"result": result}
-
-        def get_ncuts(self):
-            return self.ncuts
-
 

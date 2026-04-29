@@ -9,7 +9,7 @@ import logging
 import time
 
 cut_score_logger  = logging.getLogger(__name__)
-cut_score_logger.setLevel(logging.DEBUG)
+cut_score_logger.setLevel(logging.INFO)
 
 def pwl_with_value_parameters_and_bkpts_fixed(bkpt, f_index, log_paramateric_real_field=False, log_pw_functions=False):
     n = len(bkpt)
@@ -434,7 +434,7 @@ class SteepestDirection(abstractCutScore):
             f_index = kwds['f_index']
             mip_obj = kwds['mip_obj']
             pi = pwl_with_value_parameters_and_bkpts_fixed(bkpt, f_index)
-            cut_score_in_value_params = sum(pi(fractional(c)) for c in mip_obj)
+            cut_score_in_value_params = sum(pi(fractional(QQ(c))) for c in mip_obj)
             coord_names = ['gamma'+str(i) for i in range(len(bkpt))]
             param_obj = np.array([cut_score_in_value_params.coefficient(cut_score_in_value_params.parent().gens_dict()[name]) for name in coord_names])
             cut_score_logger.debug(f"Objective inputs... {param_obj, x}")
@@ -466,7 +466,7 @@ class SteepestDirection2(abstractCutScore):
             f_index = kwds['f_index']
             mip_obj = kwds['mip_obj']
             pi = pwl_with_value_parameters_and_bkpts_fixed(bkpt, f_index)
-            cut_score_in_value_params = sum(pi(fractional(c)) for c in mip_obj)
+            cut_score_in_value_params = sum(pi(fractional(QQ(c))) for c in mip_obj)
             coord_names = ['gamma'+str(i) for i in range(len(bkpt))]
             param_obj = np.array([cut_score_in_value_params.coefficient(cut_score_in_value_params.parent().gens_dict()[name]) for name in coord_names])
             cvxpy_objective = Maximize(2*param_obj @ x)

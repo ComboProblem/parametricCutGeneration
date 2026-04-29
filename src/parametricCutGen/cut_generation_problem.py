@@ -135,7 +135,7 @@ class cutGenerationProblem:
     >>> h = cgp_value_poly_lp.solve(binvarow, binvc, f) # ||h-g||_infty is small. Since cutScore is bypassed, h doesn't have strong numerical properties in terms of the feasiblity. # note write about this.
     """
     # *, makes arguments keyword only. Order shouldn't matter in terms of inputs. The problem will write it's own parameters into a cgp_params dict.
-    def __init__(self, *, algorithm=None, backend=None, cut_score=None,  epsilon=None, M = None, max_cgp_solver_time=None, max_num_of_bkpts=2, multithread=False,
+    def __init__(self, *, algorithm=None, backend=None, cut_score=None,  epsilon=None, M = None, max_cgp_solver_time=None, max_num_of_bkpts=4, multithread=False,
         paramaterized_solver=None, prove_seperator=False, rel_tol=None, show_proof=False):
         """
         TESTS::
