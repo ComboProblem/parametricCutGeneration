@@ -12,3 +12,5 @@ src/parametricCutGeneration.egg-info/
 # Ignore compressed downloaded files
 *.tar
 *.zip
+# testing files
+

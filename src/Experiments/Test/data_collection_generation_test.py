@@ -1,5 +1,5 @@
 # from parametricCutGen.scip_data_collection_events import CutGapDataRecording
-from parametricCutGen.optimal_cut_generation import OptimalCut
+from parametricCutGen.optimal_cut_generation import OptimalCut, GMI
 from parametricCutGen.logging_utils import * # cgp_written_log is here
 from pyscipopt import Model
 from pyscipopt import Model, quicksum, SCIP_PARAMSETTING, exp, log, sqrt, sin
@@ -242,9 +242,92 @@ def test_data_writing(model, model_name, max_number_of_data_records=10):
 
 
 
-test_data_writing(random_mip_1(False, small=True), "random_mip_1", 15)
-# test_data_writing(knapsack_model(), "knapsack_model", 150)
+# test_data_writing(random_mip_1(False, small=True), "random_mip_1", 15)
+
+
+def test_data_writing_from_event_hdlr(problem_path):
+    from pyscipopt import Model
+    from parametricCutGen.scip_data_collection_events import GapData
+    model = Model()
+    model.readProblem(problem_path)
+    model.setHeuristics(SCIP_PARAMSETTING.OFF)
+    #model.setPresolve(SCIP_PARAMSETTING.OFF)
+    sepa = OptimalCut()
+    model.includeSepa(sepa, "optimalCut", "gmic_equiv_test", priority=1000, freq=10)
+    model.readParams("./src/Experiments/paramFiles/scip_experimental_settings.set")
+    data_record = GapData(model)
+    model.includeEventhdlr(data_record, "record_gap_data", "Records dual gap data when optimal_cut is called")
+    model.optimize()
+    model.printStatistics()
+
+def test_data_writing_from_event_hdlr_GMI(problem_path):
+    from pyscipopt import Model
+    from parametricCutGen.scip_data_collection_events import GapData, disableCuts, checkCutsAdded
+    model = Model()
+    model.readProblem(problem_path)
+    model.setHeuristics(SCIP_PARAMSETTING.OFF)
+    model.setPresolve(SCIP_PARAMSETTING.OFF)
+    sepa = GMI()
+    model.includeSepa(sepa, "gmi", "gmic_equiv_test", priority=1000, freq=1)
+    model.readParams("./src/Experiments/paramFiles/scip_disable_other_cuts.set") 
+    # model.setParam("limits/nodes", 1)
+    # model.setParam("separating/maxcuts", 1)
+    model.setParam("separating/maxcutsroot", 1)
+#    model.setParam("separating/maxrounds", 0)
+#    model.setParam("separating/maxroundsroot", 0)
+    model.setParam("branching/random/priority", 20000)
+    check_cuts = checkCutsAdded(model)
+    disable = disableCuts(model)
+    model.includeEventhdlr(disable, "disable_other_cuts", "disable other cuts aside from the targeted cut")
+    model.includeEventhdlr(check_cuts, "check_node_mips", "output nodes mips to verify ")
+    model.optimize()
+    model.printStatistics()
+
+#test_data_writing_from_event_hdlr("/home/acadia/Downloads/30_70_45_095_100.mps")
+# test_data_writing_from_event_hdlr_GMI("/home/acadia/Downloads/gen-ip016.mps")
+#test_data_writing_from_event_hdlr("/home/acadia/Downloads/22433.mps")
+
+from pyscipopt import Model, SCIP_EVENTTYPE, SCIP_RESULT, Eventhdlr, SCIP_PARAMSETTING
+class checkCutsAdded(Eventhdlr):
+    def __init__(self, model):
+        Eventhdlr.__init__(model)
+        self.count = 0 
+        
+    def eventinit(self):
+        self.model.catchEvent(SCIP_EVENTTYPE.LPSOLVED, self)
+
+    def eventexec(self, event):  
+        if self.model.getCurrentNode().getDepth() > 1: # not at the root; we should have (afik) at most 1 cut added to this node
+            self.count += 1
+            self.model.writeMIP(f"node_lp_{self.count}.lp")
+        if self.count == 10:
+            self.model.interruptSolve()
+
+
+class disableCuts(Eventhdlr):
+    def __init__(self, model):
+        self.model = model
+    def eventinit(self):
+        self.model.catchEvent(SCIP_EVENTTYPE.NODEFOCUSED, self) # the event is called whenever a node is about to be solved
+
+    def eventexec(self, event):
+        if self.model.getCurrentNode().getDepth() > 1: # if we aren't in the root node
+            self.model.setSeparating(SCIP_PARAMSETTING.OFF) # disable separators
+        else:
+            self.model.setSeparating(SCIP_PARAMSETTING.DEFAULT)
+            self.model.readParams("src/Experiments/paramFiles/scip_disable_other_cuts.set") # see link
 
 
 
+model = random_mip_1(False) # from https://github.com/scipopt/PySCIPOpt/blob/master/tests/helpers/utils.py
+sepa = GMI() # From the example of seperator; https://pyscipopt.readthedocs.io/en/latest/tutorials/separator.html
+model.includeSepa(sepa, "gmi", "gmi test", priority=1000, freq=10)
+model.readParams("src/Experiments/paramFiles/scip_disable_other_cuts.set") # see link
+model.setParam("separating/maxcutsroot", 1)
+model.setParam("branching/random/priority", 20000)
+check_cuts = checkCutsAdded(model)
+disable = disableCuts(model)
+model.includeEventhdlr(disable, "disable_other_cuts", "disable other cuts aside from the targeted cut at depths not at the root")
+model.includeEventhdlr(check_cuts, "check_node_mips", "output nodes mips to verify ")
+model.optimize()
 
