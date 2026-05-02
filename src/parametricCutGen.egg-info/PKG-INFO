@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: parametricCutGen
-Version: 0.0.post26+dirty
+Version: 0.0.post33+dirty
 Summary: Experimental Cut and Branch solver using optimal cut selection via parameterized cut generating functions.
 Author-email: Acadia Larsen <acadia.larsen@gmail.com>
 License-Expression: GPL-2.0-or-later

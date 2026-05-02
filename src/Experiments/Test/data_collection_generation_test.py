@@ -288,6 +288,7 @@ def test_data_writing_from_event_hdlr_GMI(problem_path):
 #test_data_writing_from_event_hdlr("/home/acadia/Downloads/22433.mps")
 
 from pyscipopt import Model, SCIP_EVENTTYPE, SCIP_RESULT, Eventhdlr, SCIP_PARAMSETTING
+
 class checkCutsAdded(Eventhdlr):
     def __init__(self, model):
         Eventhdlr.__init__(model)
@@ -303,7 +304,6 @@ class checkCutsAdded(Eventhdlr):
         if self.count == 10:
             self.model.interruptSolve()
 
-
 class disableCuts(Eventhdlr):
     def __init__(self, model):
         self.model = model
@@ -317,12 +317,10 @@ class disableCuts(Eventhdlr):
             self.model.setSeparating(SCIP_PARAMSETTING.DEFAULT)
             self.model.readParams("src/Experiments/paramFiles/scip_disable_other_cuts.set") # see link
 
-
-
 model = random_mip_1(False) # from https://github.com/scipopt/PySCIPOpt/blob/master/tests/helpers/utils.py
 sepa = GMI() # From the example of seperator; https://pyscipopt.readthedocs.io/en/latest/tutorials/separator.html
-model.includeSepa(sepa, "gmi", "gmi test", priority=1000, freq=10)
-model.readParams("src/Experiments/paramFiles/scip_disable_other_cuts.set") # see link
+model.includeSepa(sepa, "gmi", "gmi test", priority=1000, freq=0)
+model.readParams("src/Experiments/paramFiles/scip_disable_other_cuts.set") # see link; https://github.com/ComboProblem/parametricCutGeneration/blob/main/src/Experiments/paramFiles/scip_disable_other_cuts.set
 model.setParam("separating/maxcutsroot", 1)
 model.setParam("branching/random/priority", 20000)
 check_cuts = checkCutsAdded(model)

@@ -79,7 +79,7 @@ class cgpTimer:
         if max_time is None:
             max_time = 2**63-1
         self._max_time = max_time
-        self._start_time  =  time.process_time()
+        self._start_time = time.process_time()
 
     def solver_time_out(self):
         if time.process_time() - self._start_time >= self._max_time:
@@ -123,16 +123,25 @@ class cutGenerationProblem:
     :show_proof: - bool, Outputs proof from `cutgeneratingfunctionology`.
     
     TESTS::
-    >>> from parametricCutGen.cut_generation_problem import *
-    >>> cgp_full = cutGenerationProblem(algorithm="full", backend="pplite", cut_score="steepest_direction", max_num_of_bkpts=2)
+    >>> gmic_equiv = cutGenerationProblem(algorithm="full", backend="pplite", cut_score="steepest_direction", max_num_of_bkpts=2)
+    >>> cgp_full_4 = cutGenerationProblem(algorithm="full", backend="pplite", cut_score="steepest_direction", max_num_of_bkpts=4)
     >>> cgp_bkpt_as_param = cutGenerationProblem(algorithm="bkpt_as_param", backend="pplite", cut_score="steepest_direction", max_num_of_bkpts=100)
     >>> cgp_value_poly_lp = cutGenerationProblem(algorithm="value_poly_lp", backend="pplite", cut_score="steepest_direction", max_num_of_bkpts=100)
     >>> binvarow = [3.2, 4.1, 5.6, .2]
     >>> binvc = [1.2, 4.4, 5.6, -.1]
     >>> f = 1.8 # aka b of the row
-    >>> sol_is_gmic = cgp_full.solve(binvarow, binvc, f)
-    >>> g = cgp_bkpt_as_param.solve(binvarow, binvc, f)
-    >>> h = cgp_value_poly_lp.solve(binvarow, binvc, f) # ||h-g||_infty is small. Since cutScore is bypassed, h doesn't have strong numerical properties in terms of the feasiblity. # note write about this.
+    >>> sol_is_gmic = gmic_equiv.solve(binvarow, binvc, f)
+    >>> cpg_full_4_sol = cgp_full_4.solve(binvarow, binvc, f)
+    >>> cgp_bkpt_as_param_sol = cgp_bkpt_as_param.solve(binvarow, binvc, f)
+    >>> cpg_value_poly_sol = cgp_value_poly_lp.solve(binvarow, binvc, f) # ||h-g||_infty ~ 0.015. g and h should have a similar solution since the problems are equivlant; impmentation choices make a difference!
+    >>> cut_score_for_gmic_equiv =  sum(binvc[i]*sol_is_gmic(fractional(binvarow[i])) for i in range(4)); cut_score_for_gmic_equiv
+    5.02500000000000
+    >>> cut_score_for_cpg_full_4_sol = sum(binvc[i]*cpg_full_4_sol(fractional(binvarow[i])) for i in range(4)); cut_score_for_cpg_full_4_sol
+    
+    >>> cut_score_for_h = sum(binvc[i]*h(fractional(binvarow[i])) for i in range(4)); cut_score_for_h
+    5.63837460764390
+    >>> cut_score_for_gmic = sum(binvc[i]*sol_is_gmic(fractional(binvarow[i])) for i in range(4)); cut_score_for_gmic
+    5.02500000000000
     """
     # *, makes arguments keyword only. Order shouldn't matter in terms of inputs. The problem will write it's own parameters into a cgp_params dict.
     def __init__(self, *, algorithm=None, backend=None, cut_score=None,  epsilon=None, M = None, max_cgp_solver_time=None, max_num_of_bkpts=4, multithread=False,
@@ -185,7 +194,7 @@ class cutGenerationProblem:
         if rel_tol is not None:
             self._rel_tol = rel_tol
         else:
-            self._rel_tol = 10**-3
+            self._rel_tol = 10**-6
         self._cut_score.set_rel_tol(self._rel_tol)
         self._cut_score.set_espilon(self._espilon)
         self._cut_score.set_lipschitz_constant(self._M)
@@ -246,6 +255,7 @@ class cutGenerationProblem:
             bkpt_bsa.add_polynomial_constraint(lambda_f_index - frac_f, operator.eq)
             try:
                 if not bkpt_bsa.upstairs().is_empty():
+                    cut_generation_problem_logger.debug(f"Non empty bsa found.")
                     b0 = list(bkpt_bsa.find_point())
                     v0 = list(value_nnc_polyhedron_value_cords(b0, bsa_f_index).find_point())
                     # A feasible solution for cell problem has been found.
@@ -263,6 +273,7 @@ class cutGenerationProblem:
                     except SolverHalt:
                         pass
                     except SolverTimeOut:
+                        cut_generation_problem_logger.debug(f"Solver timed out.")
                         # use the last good point to see if we have improvement before timing out our computation
                         # and sending the result to the MIP
                         self._cut_score.set_timer(None)
@@ -273,22 +284,24 @@ class cutGenerationProblem:
                                 best_result = value_for_cell
                                 solution_for_best_result = point
                                 rep_elem_of_best_cell = b+v
-                            if best_value < value_for_cell:
+                            elif best_value < value_for_cell:
                                 best_value = value_for_cell
                                 solution_for_best_result = point
                                 rep_elem_of_best_cell = b+v
                         break
                     except SolverTolReached:
+                        cut_generation_problem_logger.debug(f"Solver tol reached.")
                         value_for_cell = self._cut_score.get_prev_result()
                         if solution_for_best_result is None:
                             best_result = value_for_cell
                             solution_for_best_result = point
                             rep_elem_of_best_cell = b+v
-                        if best_value < value_for_cell:
+                        elif best_value < value_for_cell:
                             best_result = value_for_cell
                             solution_for_best_result = point
                             rep_elem_of_best_cell = b+v
-                        break
+                        continue
+        
                             
                     # When a SolverHalt is encountered
                     # the NL solver has violated a constraint of the model or minimality
@@ -296,13 +309,17 @@ class cutGenerationProblem:
                     # solver.
                     point = self._cut_score.get_feasible_point()
                     try:
-                        value_for_cell = self._cut_score(point)
+                        try:
+                            value_for_cell = self._cut_score(point)
+                        except SolverHalt or SolverTolReached:
+                            value_for_cell = self._cut_score.get_prev_result()
+                            point = self._cut_score._prev_feasible_point
                         continue_solving = True
                         if solution_for_best_result is None:
                             best_result = value_for_cell
                             solution_for_best_result = point
                             rep_elem_of_best_cell = b+v
-                        if best_value < value_for_cell:
+                        elif best_value < value_for_cell:
                             best_result = value_for_cell
                             solution_for_best_result = point
                             rep_elem_of_best_cell = b+v
@@ -313,14 +330,16 @@ class cutGenerationProblem:
                             best_result = value_for_cell
                             solution_for_best_result = point
                             rep_elem_of_best_cell = b+v
-                        if best_value < value_for_cell:
-                            best_result = value_for_cell
-                            solution_for_best_result = point
-                            rep_elem_of_best_cell = b+v
+                        else:
+                            if  best_value < value_for_cell:
+                                best_result = value_for_cell
+                                solution_for_best_result = point
+                                rep_elem_of_best_cell = b+v
                         continue_solving =  False
                     if not continue_solving:
                         break
             except EmptyBSA:
+                cut_generation_problem_logger.debug(f"BSA EMPTY")
                 pass
         # If result is None, the solver has failed to find any meaningful result or the computation has timed out.
         # There should always be a result and the SolverError should never be raised unless the computation has timed out.

@@ -133,6 +133,7 @@ class cutScore:
         self._sage_to_solver_type = None
         self._timer = None
         self._feasible_point = None
+        self._prev_feasible_point = None
         self._rel_tol = 10**-6
         self._prev_result = None
         if "obj_type" in kwrds.keys():
@@ -165,6 +166,8 @@ class cutScore:
         # we believe to up to rounding and L.C. that pi_p is a minimal function in the current cell
         # and satisfies the conditions of the model or will raise an error.
         b, v = self.validate_point(parameters)
+        if self._prev_feasible_point is not None:
+            self._prev_feasible_point = b+v
         self.set_feasible_point(b+v)
         pi = piecewise_function_from_breakpoints_and_values(b + [1], v + [0])
         row_data = self.get_MIP_row()
@@ -177,7 +180,7 @@ class cutScore:
             if abs(sage_result - self.get_prev_result())/sage_result < self._rel_tol:
                 cut_score_logger.debug(f"cutScore.__call__: Relative distance between successive solutions is less than {self._rel_tol}. Stopping non-linear solver.")
                 self.set_prev_result(sage_result)
-                raise SolverTolReached
+                raise SolverHalt
             else:
                 self.set_prev_result(sage_result)
         else:
