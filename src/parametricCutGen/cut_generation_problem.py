@@ -48,7 +48,7 @@ def sparse_enough_breakpoints(bkpt_old, epsilon):
     - breakpoint sequence such that bkpt[i+1]-bkpt[i] > epsilon xor bkpt[i] = bkpt[i+1].
 
     TESTS::
-    >>> from parametricCutGen import *
+    >>> from parametricCutGen.cut_generation_problem import *
     >>> sparse_enough_breakpoints([0, 10**-7, 4/5], 10**-6)
     [0, 4/5]
     """
@@ -117,12 +117,12 @@ class cutGenerationProblem:
     :max_cgp_solver_time: - Optimal real clock time limit for solving problem. Takes positive values.
     :max_num_of_bkpts: - integer >= 2, maximum number of breakpoints a minimal function is allowed to have.
     :multithread: - bool, Not implemented, intended for "full" algorithm.
-    :paramaterized_solver: - None or a (subclass of)  :class:`abstractCutGenProblemSolverInterface`.
     :prove_seperator: - bool, proves every function used is actually a function that can be used to generate a separator.
     :rel_tol: - real number >0, stopping condition for solving cgp. If the distance between two solutions of the cgp is less than `rel_tol` then they are considered equal and the solver will halt and return the most recent solution.
     :show_proof: - bool, Outputs proof from `cutgeneratingfunctionology`.
     
     TESTS::
+    >>> from parametricCutGen.cut_generation_problem import *
     >>> gmic_equiv = cutGenerationProblem(algorithm="full", backend="pplite", cut_score="steepest_direction", max_num_of_bkpts=2)
     >>> cgp_full_4 = cutGenerationProblem(algorithm="full", backend="pplite", cut_score="steepest_direction", max_num_of_bkpts=4)
     >>> cgp_bkpt_as_param = cutGenerationProblem(algorithm="bkpt_as_param", backend="pplite", cut_score="steepest_direction", max_num_of_bkpts=100)
@@ -131,21 +131,26 @@ class cutGenerationProblem:
     >>> binvc = [1.2, 4.4, 5.6, -.1]
     >>> f = 1.8 # aka b of the row
     >>> sol_is_gmic = gmic_equiv.solve(binvarow, binvc, f)
-    >>> cpg_full_4_sol = cgp_full_4.solve(binvarow, binvc, f)
+    >>> cgp_full_4_sol = cgp_full_4.solve(binvarow, binvc, f)
     >>> cgp_bkpt_as_param_sol = cgp_bkpt_as_param.solve(binvarow, binvc, f)
     >>> cpg_value_poly_sol = cgp_value_poly_lp.solve(binvarow, binvc, f) # ||h-g||_infty ~ 0.015. g and h should have a similar solution since the problems are equivlant; impmentation choices make a difference!
     >>> cut_score_for_gmic_equiv =  sum(binvc[i]*sol_is_gmic(fractional(binvarow[i])) for i in range(4)); cut_score_for_gmic_equiv
     5.02500000000000
-    >>> cut_score_for_cpg_full_4_sol = sum(binvc[i]*cpg_full_4_sol(fractional(binvarow[i])) for i in range(4)); cut_score_for_cpg_full_4_sol
-    
-    >>> cut_score_for_h = sum(binvc[i]*h(fractional(binvarow[i])) for i in range(4)); cut_score_for_h
+    >>> cut_score_for_cgp_full_4_sol = sum(binvc[i]*cgp_full_4_sol(fractional(binvarow[i])) for i in range(4)); cut_score_for_cgp_full_4_sol # the solution is GMIC
+    5.02500000000000
+    >>> cut_score_for_cgp_bkpt_as_param = sum(binvc[i]*cgp_bkpt_as_param_sol(fractional(binvarow[i])) for i in range(4)); cut_score_for_cgp_bkpt_as_param # Using additonal breakpoints can improve the result.
+    5.69166666666666
+    >>> cut_score_for_cgp_value_poly_lp = sum(binvc[i]*cpg_value_poly_sol(fractional(binvarow[i])) for i in range(4)); cut_score_for_cgp_value_poly_lp
     5.63837460764390
     >>> cut_score_for_gmic = sum(binvc[i]*sol_is_gmic(fractional(binvarow[i])) for i in range(4)); cut_score_for_gmic
     5.02500000000000
+    >>> cgp_full_4_min = cutGenerationProblem(algorithm="full", backend="pplite", cut_score="steepest_direction", max_num_of_bkpts=4, objective_sense="minimize")
+    >>> cpg_full_4_min_sol = cgp_full_4_min.solve(binvarow, binvc, f)
+    >>> cut_score_for_cgp_full_4_min = sum(binvc[i]*cpg_full_4_min_sol(fractional(binvarow[i])) for i in range(4)); cut_score_for_cgp_full_4_min
+    4.64166666666666
     """
     # *, makes arguments keyword only. Order shouldn't matter in terms of inputs. The problem will write it's own parameters into a cgp_params dict.
-    def __init__(self, *, algorithm=None, backend=None, cut_score=None,  epsilon=None, M = None, max_cgp_solver_time=None, max_num_of_bkpts=4, multithread=False,
-        paramaterized_solver=None, prove_seperator=False, rel_tol=None, show_proof=False):
+    def __init__(self, *, algorithm=None, backend=None, cut_score=None,  epsilon=None, M = None, max_cgp_solver_time=None, max_num_of_bkpts=4, multithread=False, objective_sense="maximize", prove_seperator=False, rel_tol=None, show_proof=False):
         """
         TESTS::
         >>> from parametricCutGen.cut_generation_problem import *
@@ -157,7 +162,10 @@ class cutGenerationProblem:
         """
         self._cgp_input_parameters = {**locals()} # copy input parameters; only inital inputs here.
         self._cgp_input_parameters.pop("self") # This is required to ensure that when parameters are reused for initlaziation, problems doens't arise.
-        # TODO: Implement a way so that cgps with the same parameter are the same object; maybe. 
+        # TODO: Implement a way so that cgps with the same parameter are the same object; maybe.
+        self._objective_sense = objective_sense
+        if self._objective_sense not in ["maximize", "minimize"]:
+            raise ValueError("Objective senese should be either maximize or minimize.")
         if algorithm is None or algorithm.lower() == "full":
             self._algorithm = "full"
             if max_num_of_bkpts not in avail_rep_elems:
@@ -172,10 +180,10 @@ class cutGenerationProblem:
         else:
             raise ValueError("No other algorithms are supported at this time.")
         if cut_score is None:
-            self._cut_score = cutScore("steepest_direction")
+            self._cut_score = cutScore(cut_score="steepest_direction", objective_sense=self._objective_sense)
         else:
             try:
-                self._cut_score = cutScore(cut_score=cut_score)
+                self._cut_score = cutScore(cut_score=cut_score,  objective_sense=self._objective_sense)
             except NameError:
                 raise ValueError("Please provided a valid defined cutScore.")
         self._cut_score.set_sage_to_solver_type(self._solver.sage_to_solver_type)
@@ -200,6 +208,7 @@ class cutGenerationProblem:
         self._cut_score.set_lipschitz_constant(self._M)
         self._max_cgp_solver_time = max_cgp_solver_time
         self._max_num_of_bkpts = max_num_of_bkpts
+
         
     def __repr__(self):
         return f"Cut generation problem using algorithm {self._algorithm}."
@@ -231,13 +240,14 @@ class cutGenerationProblem:
         frac_f = fractional(QQ(f))
         def cut_score(params):
             return self._cut_score(params)
-        # if max_or_min == "max":
-        best_value = -1*np.inf
-        # else: #To do implement minimize options
-        #     raise NotImplementedError
-        best_result = None
-        solution_for_best_result = None
-        if self._cut_space is None: # load the semi algebraic descriptions.
+        if self._objective_sense == "maximize":
+            self._cut_score.set_objective_sense("minimize") # scipy solver is in the form of min f(x) s.t. x\in S =  max -f(x) s.t. x\in S 
+            best_result = -1*np.inf                          # f(x) = -1*cut_score(point) with objective sense min. 
+        elif self._objective_sense == "minimize":           # f(x) = cut_score(point) with objective sense max.
+            self._cut_score.set_objective_sense("maximize")
+            best_result = np.inf
+        best_point = None
+        if self._cut_space is None: # load the semi algebraic cell descriptions of pi min.
              self._cut_space = PiMinContContainer(self._max_num_of_bkpts, backend=self._backend)
         # start the clock when the actual portion of the solving processes starts.
         problem_timer = cgpTimer(self._max_cgp_solver_time)
@@ -269,87 +279,43 @@ class cutGenerationProblem:
                     subdomain_solver_constraints = self._solver.write_nonlinear_constraints_from_bsa(subdomain_with_f_constraint)
                     # Call a NL solver, attempt to solve the cell optimization problem.
                     try:
-                        self._solver.nonlinear_solve(cut_score, point, subdomain_solver_constraints)
-                    except SolverHalt:
-                        pass
-                    except SolverTimeOut:
-                        cut_generation_problem_logger.debug(f"Solver timed out.")
-                        # use the last good point to see if we have improvement before timing out our computation
-                        # and sending the result to the MIP
-                        self._cut_score.set_timer(None)
-                        point = self._cut_score.get_feasible_point()
-                        if point is not None:
-                            value_for_cell = self._cut_score(point)
-                            if solution_for_best_result is None:
-                                best_result = value_for_cell
-                                solution_for_best_result = point
-                                rep_elem_of_best_cell = b+v
-                            elif best_value < value_for_cell:
-                                best_value = value_for_cell
-                                solution_for_best_result = point
-                                rep_elem_of_best_cell = b+v
-                        break
-                    except SolverTolReached:
-                        cut_generation_problem_logger.debug(f"Solver tol reached.")
-                        value_for_cell = self._cut_score.get_prev_result()
-                        if solution_for_best_result is None:
-                            best_result = value_for_cell
-                            solution_for_best_result = point
-                            rep_elem_of_best_cell = b+v
-                        elif best_value < value_for_cell:
-                            best_result = value_for_cell
-                            solution_for_best_result = point
-                            rep_elem_of_best_cell = b+v
-                        continue
-        
-                            
-                    # When a SolverHalt is encountered
-                    # the NL solver has violated a constraint of the model or minimality
-                    # within the cell. Use the last known feasible point from the
-                    # solver.
-                    point = self._cut_score.get_feasible_point()
-                    try:
-                        try:
-                            value_for_cell = self._cut_score(point)
-                        except SolverHalt or SolverTolReached:
-                            value_for_cell = self._cut_score.get_prev_result()
-                            point = self._cut_score._prev_feasible_point
                         continue_solving = True
-                        if solution_for_best_result is None:
-                            best_result = value_for_cell
-                            solution_for_best_result = point
-                            rep_elem_of_best_cell = b+v
-                        elif best_value < value_for_cell:
-                            best_result = value_for_cell
-                            solution_for_best_result = point
-                            rep_elem_of_best_cell = b+v
-                    except SolverTimeOut or SolverTolReached: # check solver halts errors, it seems to be getting raised on test values
-                        self._cut_score.set_timer(None)
-                        value_for_cell = self._cut_score.get_prev_result()
-                        if solution_for_best_result is None:
-                            best_result = value_for_cell
-                            solution_for_best_result = point
-                            rep_elem_of_best_cell = b+v
-                        else:
-                            if  best_value < value_for_cell:
-                                best_result = value_for_cell
-                                solution_for_best_result = point
-                                rep_elem_of_best_cell = b+v
-                        continue_solving =  False
+                        self._solver.nonlinear_solve(cut_score, point, subdomain_solver_constraints)
+                    except ModelViolation: # _cut_score.get_feasible_point() for last feasible point.
+                        cut_generation_problem_logger.debug(f"Cell {subdomain_with_f_constraint} solved with exit {ModelViolation}")
+                    except SolverTimeOut:
+                        continue_solving = False
+                        cut_generation_problem_logger.error(f"Cell {subdomain_with_f_constraint} not solved fully with exit {SolverTimeOut}")
+                    except SolverRelTolReached:
+                        cut_generation_problem_logger.debug(f"Cell {subdomain_with_f_constraint} solved with exit {SolverRelTolReached}")
+                    # Get the most recent feasible point and value according to cutScore
+                    point = self._cut_score.get_feasible_point()  # this should always be defined.
+                    result = self._cut_score.get_prev_result() # this should always be defined.
+                    self._cut_score.set_prev_result(None)
+                    self._cut_score.set_feasible_point(None)
+                    cut_generation_problem_logger.debug(f"Cell {subdomain_with_f_constraint} result:{result}, best_result:{best_result}")
+                    if self._objective_sense == "maximize": # multiply resutl by -1 to get objective value in original problem phrasing.
+                        if best_result < -1*result:
+                            best_result = -1*result
+                            best_point = point
+                    elif self._objective_sense == "minimize":  # f(x) = cut_score(point) with objective sense max.
+                        if best_result > result:
+                            best_result = result
+                            best_point = point
                     if not continue_solving:
                         break
             except EmptyBSA:
-                cut_generation_problem_logger.debug(f"BSA EMPTY")
-                pass
-        # If result is None, the solver has failed to find any meaningful result or the computation has timed out.
-        # There should always be a result and the SolverError should never be raised unless the computation has timed out.
-        if best_result is None:
-            cut_generation_problem_logger.debug("s")
-            raise SolverError("The solver has failed, we should always get a result from the computation. Try increasing the time allowed for the solver to run.")
-        val_result = [QQ(gamma_i) for gamma_i in solution_for_best_result[self._max_num_of_bkpts:]]
-        bkpt_result = [QQ(lambda_i) for lambda_i in solution_for_best_result[:self._max_num_of_bkpts]]
-        pi_p = piecewise_function_from_breakpoints_and_values(bkpt_result+[1],val_result+[0])
-        log_problem_result(bkpt_result, val_result, binvarow, binvc, f)
+                cut_generation_problem_logger.debug(f"BSA EMPTY.")
+                continue
+        # If best_result is +/- np.inf, the solver has failed to find any meaningful result.
+        # The statement below should always be false.
+        if best_result == np.inf or best_result == -1*np.inf:
+            cut_generation_problem_logger.error(f"The solver has failed.  best_result is unbouded {best_result}")
+            raise SolverError("The solver has failed.  best_result is unbouded {best_result}")
+        sol_vals = [QQ(gamma_i) for gamma_i in best_point[self._max_num_of_bkpts:]]
+        sol_bkpts = [QQ(lambda_i) for lambda_i in best_point[:self._max_num_of_bkpts]]
+        pi_p = piecewise_function_from_breakpoints_and_values(sol_bkpts+[1],sol_vals+[0])
+        log_problem_result(sol_bkpts, sol_vals, binvarow, binvc, f)
         if self._prove_seperator:
             res = minimality_test(pi_p) # add someway to log certificates.
             if not res:
@@ -368,6 +334,10 @@ class cutGenerationProblem:
         frac_f = fractional(QQ(f))
         def cut_score(params):
             return self._cut_score(params)
+        if self._objective_sense == "maximize":             # scipy solver is in the form of min f(x) s.t. x\in S =  max -f(x) s.t. x\in S.
+            self._cut_score.set_objective_sense("minimize") # f(x) = -1*cut_score(point) with objective sense min.
+        elif self._objective_sense == "minimize":           # f(x) = cut_score(point) with objective sense max.
+            self._cut_score.set_objective_sense("maximize")
         symmetrized_bkpts = [0, frac_f]
         # symmertized breakpoints should all be in [0,1)
         for b in binvarow:
@@ -407,19 +377,17 @@ class cutGenerationProblem:
         self._cut_score.set_current_cell(value_polyhedron)
         value_polyhedron_constraints = self._solver.write_linear_constraints_from_bsa(value_polyhedron)
         try:
-            result = self._solver.nonlinear_solve(cut_score, point, value_polyhedron_constraints)
-        except SolverHalt:
-            pass
-        except SolverTolReached:
-            pass
+            self._solver.nonlinear_solve(cut_score, point, value_polyhedron_constraints)
+        except ModelViolation:
+            cut_generation_problem_logger.debug(f"Value Poly {value_polyhedron} solved with exit {ModelViolation}")
+        except SolverRelTolReached:
+            cut_generation_problem_logger.debug(f"Value Poly {value_polyhedron} solved with exit {SolverRelTolReached}")
         except SolverTimeOut:
-            self._cut_score.set_timer(None)
-            if self._cut_score.get_feasible_point() is None:
-                raise SolverError("The solver has failed to find a feasible point, allocate more solver time")
+            cut_generation_problem_logger.error(f"Value Poly {value_polyhedron} not solved fully with exit {SolverTimeOut}")
         self._cut_score.set_timer(None)
-        result_point = self._cut_score.get_feasible_point()  # this should always be defined.
-        val_result = [QQ(gamma_i) for gamma_i in point[num_bkpt:]]
-        bkpt_result = [QQ(lambda_i) for lambda_i in point[:num_bkpt]]
+        result_point = self._cut_score.get_feasible_point()
+        val_result = [QQ(gamma_i) for gamma_i in result_point[num_bkpt:]]
+        bkpt_result = [QQ(lambda_i) for lambda_i in result_point[:num_bkpt]]
         pi_p = piecewise_function_from_breakpoints_and_values(bkpt_result+[1], val_result+[0])
         log_problem_result(bkpt_result, val_result, binvarow, binvc, f)
         if self._prove_seperator:
@@ -470,16 +438,17 @@ class cutGenerationProblem:
         cut_generation_problem_logger.debug(f"Dim of value polyhedron : {value_polyhedron.upstairs().ambient_dim()}")
         linear_constraints, x =  self._solver.write_linear_constraints_from_bsa(value_polyhedron)
         if self._cut_score._cut_score.is_linear():
-            objective = self._cut_score._cut_score.wrap_cut_score_to_solver_linear_objective(self._solver, mip_obj=binvc, x=x, bkpt=sparse_bkpt, f_index=f_index)
+            objective = self._cut_score._cut_score.wrap_cut_score_to_solver_linear_objective(self._solver, mip_obj=binvc, x=x, bkpt=sparse_bkpt, f_index=f_index, objective_sense=self._objective_sense)
         else:
             raise ValueError("This method only works for linear objective functions. Try using the bkpt_as_param algorithm.")
         obj_val, values, status, prob_res = self._solver.lp_solve(linear_constraints, objective, x=x)
+        cut_generation_problem_logger.debug(f"status: {status}, obj_val: {obj_val}}")
         values = [QQ(v) for v in values]
         point = sparse_bkpt+values
         self._cut_score.set_current_cell(value_polyhedron)
         try:
             b, v = self._cut_score.validate_point(point)
-        except SolverHalt:
+        except ModelViolation:
             b = sparse_bkpt
             v = values
         pi_p = piecewise_function_from_breakpoints_and_values(b+[1], v+[0])

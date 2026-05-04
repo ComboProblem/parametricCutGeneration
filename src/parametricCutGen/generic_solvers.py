@@ -1,6 +1,6 @@
 from cutgeneratingfunctionology.igp import *
 from scipy.optimize import minimize, LinearConstraint, NonlinearConstraint
-from cvxpy import Variable, Minimize, Problem
+from cvxpy import Variable, Maximize, Minimize, Problem
 from .execptions import *
 import logging
 
@@ -30,7 +30,7 @@ class abstractCutGenProblemSolverInterface:
 
 
     @staticmethod
-    def lp_solve(constraints, objective,  **solver_options):
+    def lp_solve(cell_constraints, cut_score_objective,  **solver_options):
         r"""
         Interface to solver's min/max f(x) s.t. Ax<=b.
 
@@ -41,7 +41,7 @@ class abstractCutGenProblemSolverInterface:
         raise NotImplementedError
 
     @staticmethod
-    def nonlinear_solve(constraints, objective, **solver_options):
+    def nonlinear_solve(cell_constraints, cut_score_objective, **solver_options):
         r"""
         Interface to solver's min/max f(x) s.t. p_i(x) <= b_i, where p_i is a polynomial and at least 1 p_i has degree larger than 1.
         """
@@ -166,7 +166,7 @@ class scipyCutGenProbelmSolverInterface(abstractCutGenProblemSolverInterface):
         raise NotImplementedError
 
     @staticmethod
-    def nonlinear_solve(objective, x0, cons, jac=None, hess=None,  **solver_options):
+    def nonlinear_solve(objective, x0, cons, jac=None, hess=None, **solver_options):
         r"""
         Given converted constraints and an objective function that is compatible with the solver,
         use scipy minimize to ...
@@ -177,7 +177,7 @@ class scipyCutGenProbelmSolverInterface(abstractCutGenProblemSolverInterface):
             else:
                 result = minimize(objective, x0, constraints=cons, jac=jac)
         else:
-            result = minimize(objective, x0, constraints=cons, jac=jac, hess=hess)
+            result = minimize(objective, x0, constraints=cons)
         return result.success, result.fun, result.x, result
 
     @staticmethod
@@ -235,19 +235,20 @@ class cvxpyCutGenProblemSolverInterface(abstractCutGenProblemSolverInterface):
 
 
     @staticmethod
-    def lp_solve(constraints, objective,  **solver_options):
+    def lp_solve(cell_constraints, cut_score_objective, **solver_options):
         r"""
         Interface to solver's min/max f(x) s.t. Ax<=b.
 
         Should return optimal objective value, optimal objective solution, solver success, and solver_output.
         """
+        
         x = solver_options['x']# intnded to be form the constraints x
-        prob = Problem(objective, constraints)
+        prob = Problem(cut_score_objective, cell_constraints)
         result = prob.solve()        
         return prob.value, x.value, None, prob
 
     @staticmethod
-    def nonlinear_solve(constraints, objective, **solver_options):
+    def nonlinear_solve(cell_constraints, cut_score_objective, **solver_options):
         r"""
         Interface to solver's min/max f(x) s.t. p_i(x) <= b_i, where p_i is a polynomial and at least 1 p_i has degree larger than 1.
         """
@@ -259,4 +260,4 @@ class cvxpyCutGenProblemSolverInterface(abstractCutGenProblemSolverInterface):
         r"""
         Return the correct solver type from a sage ring element.
         """
-        raise NotImplementedError
+        return float(sage_ring_element)

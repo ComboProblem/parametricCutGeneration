@@ -110,7 +110,7 @@ class cutScore:
     >>> cutScore(TestCutScore)
     cut score TestCutScore
     """
-    def __init__(self, cut_score=None, **kwrds):
+    def __init__(self, *, cut_score=None, objective_sense="maximize"):
         r"""
         Initialize the paramatrized cut scoring function.
 
@@ -133,13 +133,11 @@ class cutScore:
         self._sage_to_solver_type = None
         self._timer = None
         self._feasible_point = None
-        self._prev_feasible_point = None
-        self._rel_tol = 10**-6
+        self._rel_tol = 10**-9
         self._prev_result = None
-        if "obj_type" in kwrds.keys():
-            self._cut_obj_type = kwrds.keys()["obj_type"]
-        else:
-            self._cut_obj_type = "max"
+        self._objective_sense = objective_sense
+        if self._objective_sense not in ["maximize", "minimize"]:
+            raise ValueError("Objective senese should be either maximize or minimize.")
 
     def __repr__(self):
         return f"cut score {self._cut_score.__name__}"
@@ -166,21 +164,21 @@ class cutScore:
         # we believe to up to rounding and L.C. that pi_p is a minimal function in the current cell
         # and satisfies the conditions of the model or will raise an error.
         b, v = self.validate_point(parameters)
-        if self._prev_feasible_point is not None:
-            self._prev_feasible_point = b+v
         self.set_feasible_point(b+v)
         pi = piecewise_function_from_breakpoints_and_values(b + [1], v + [0])
         row_data = self.get_MIP_row()
         sage_cut = [pi(fractional(QQ(bar_a_ij))) for bar_a_ij in row_data]
         sage_mip_obj =  [QQ(bar_cj) for bar_cj in self._MIP_objective]
         sage_result = self._cut_score.cut_score(sage_cut, sage_mip_obj)
+        if self._objective_sense == "minimize":
+            sage_result = -1*sage_result
         self._sage_cut = sage_cut
         self._sage_mip_obj = sage_mip_obj
         if self.get_prev_result() is not None and sage_result != 0:
             if abs(sage_result - self.get_prev_result())/sage_result < self._rel_tol:
                 cut_score_logger.debug(f"cutScore.__call__: Relative distance between successive solutions is less than {self._rel_tol}. Stopping non-linear solver.")
                 self.set_prev_result(sage_result)
-                raise SolverHalt
+                raise SolverRelTolReached(f"cutScore.__call__: Relative distance between successive solutions is less than {self._rel_tol}. Stopping non-linear solver.")
             else:
                 self.set_prev_result(sage_result)
         else:
@@ -203,6 +201,7 @@ class cutScore:
         Hessian of cutScore. This method should only be called after a __call__ has been made to cutScore.
         """
         return self._cut_score.cut_score_hess(self._sage_cut, self._sage_mip_obj)
+        
 
 ### Get and set methods for communicating data between solvers.
 
@@ -223,6 +222,9 @@ class cutScore:
 
     def get_lipschitz_constant(self):
         return self._M
+
+    def get_objective_sense(self):
+        return self._objective_sense
 
     def get_MIP_obj(self):
         return self._MIP_objective
@@ -261,6 +263,9 @@ class cutScore:
     def set_lipschitz_constant(self, M):
         self._M = M
 
+    def set_objective_sense(self, objective_sense):
+        self._objective_sense = objective_sense
+
     def set_MIP_row(self, new_row):
         self._MIP_row = new_row
 
@@ -287,8 +292,8 @@ class cutScore:
         """
         self._timer = timer
 
-    def cut_obj_type(self):
-         self._cut_obj_type
+    def objective_sense(self):
+         self._objective_sense
 
     def validate_point(self, point, poly_check=False):
         """
@@ -309,32 +314,32 @@ class cutScore:
         # values should be in [0,1]
         for i in range(n):
             if (b[i] < 0 or b[i] + epsilon >= 1) and i != f_index:
-                raise SolverHalt(f"validate_point: breakpoint lambda_{i} < 0 or lambda_{i}>= 1; lambda_{i}=={b[i]}")
+                raise ModelViolation(f"validate_point: breakpoint lambda_{i} < 0 or lambda_{i}>= 1; lambda_{i}=={b[i]}")
             if (v[i] < 0 or v[i] + epsilon > 1) and i != f_index:
-                raise SolverHalt(f"validate_point: breakpoint gamma_{i} < 0 or gamma_{i}>= 1; gamma_{i}=={v[i]}")
+                raise ModelViolation(f"validate_point: breakpoint gamma_{i} < 0 or gamma_{i}>= 1; gamma_{i}=={v[i]}")
         # pi(0) = 0, pi(f) = 1
         if abs(b[0]-0) <= epsilon:
             b[0] = 0
         else:
             cut_score_logger.debug(f"validate_point: breakpoint lambda_0 >0, point: {point}, cell: {cell}")
-            raise SolverHalt("breakpoint lambda_0 >0")
+            raise ModelViolation("breakpoint lambda_0 >0")
         if abs(v[0]-0) <= epsilon:
             v[0] = 0
         else:
             cut_score_logger.debug(f"validate_point: breakpoint gamma_0 >0, point: {point}, cell: {cell}")
-            raise SolverHalt("value gamma_0 >0")
+            raise ModelViolation("value gamma_0 >0")
         # bkpt[f_index] == f
         if abs(b[f_index] - f_trust) <= epsilon:
             b[f_index] = f_trust
         else:
             cut_score_logger.debug(f"validate_point: breakpoint lambda_{f_index} != {f_trust}: point: {point}, cell: {cell}")
-            raise SolverHalt(f"breakpoint lambda_{f_index} != {f_trust}")
+            raise ModelViolation(f"breakpoint lambda_{f_index} != {f_trust}")
         # pi_p(f) = 1
         if abs(v[f_index] - 1) <= epsilon:
             v[f_index] = 1
         else:
             cut_score_logger.debug(f"validate_point: breakpoint lambda_{f_index} !=1: point: {point}, cell: {cell}")
-            raise SolverHalt(f"value gamma_{f_index} != 1")
+            raise ModelViolation(f"value gamma_{f_index} != 1")
         # lipschitz constant and continuity.
         for i in range(n-1):
             if 0 < b[i+1]-b[i]<= epsilon:
@@ -342,12 +347,12 @@ class cutScore:
                     # potential discontunity
                     # not in (epsilon_i, M) - charts.
                     cut_score_logger.debug(f"validate_point: Solution does not have lipschitz constant {M}: point: {point}, cell: {cell}")
-                    raise SolverHalt(f"Solution does not have lipschitz constant {M}")
+                    raise ModelViolation(f"Solution does not have lipschitz constant {M}")
                 # lambda_i+1 = lambda_i
                 b[i+1] = b[i]
                 # continuity, gamma_i =gamma_i+1
                 if abs(v[i+1]-v[i]) > epsilon:
-                    raise SolverHalt
+                    raise ModelViolation
                 v[i+1] = v[i]
                 # when epsilon <= v[i+1]-v[i] < epsilon*M
                 # the solution exists in the intersection of the epsilon,M
@@ -355,7 +360,7 @@ class cutScore:
         # the last breakpoint should be distinct from 1 to enforce a breakpoint sequence.
         if 1-b[n-1] <= epsilon:
             cut_score_logger.debug(f"validate_point: breakpoint lambda_{n-1} >= 1: point: {point}, cell: {cell}")
-            raise SolverHalt(f"breakpoint lambda_{n-1} >= 1")
+            raise ModelViolation(f"breakpoint lambda_{n-1} >= 1")
         # b,v are rounded values.
         # ensure constraints hold
         # For a polynomial constraint, poly, assume poly(b,v) = 0. Then poly(point) = poly((b,v) + O(epsilon))
@@ -377,21 +382,21 @@ class cutScore:
                         # assume poly(b+v) == 0.
                         if abs(poly(sage_point)) <= sum(abs(grad(sage_point)) for grad in poly.gradient())*epsilon:
                             cut_score_logger.debug(f"validate_point: {poly} evaluated at {b+v} == 0 when {poly} evaluated at {b+v} should be < 0: point: {point}, cell: {cell}")
-                            raise SolverHalt(f"{poly} evaluated at {b+v} == 0 when {poly} evaluated at {b+v} should be < 0")
+                            raise ModelViolation(f"{poly} evaluated at {b+v} == 0 when {poly} evaluated at {b+v} should be < 0")
                         else:
                             pass
                     else:
                         cut_score_logger.debug(f"validate_point: {poly} evaluated at {b+v} >= 0 when {poly} evaluated at {b+v} should be < 0: point: {point}, cell: {cell}")
-                        raise SolverHalt(f"{poly} evaluated at {b+v} >= 0 when {poly} evaluated at {b+v} should be < 0")
+                        raise ModelViolation(f"{poly} evaluated at {b+v} >= 0 when {poly} evaluated at {b+v} should be < 0")
             for poly in cell.le_poly():
                 if poly(b+v) > 0:
                     cut_score_logger.debug(f"validate_point: {poly} evaluated at {b+v} >0 when {poly} evaluated at {b+v} should be <=  0: point: {point}, cell: {cell}")
-                    raise SolverHalt(f"{poly} evaluated at {b+v} >0 when {poly} evaluated at {b+v} should be <= 0")
+                    raise ModelViolation(f"{poly} evaluated at {b+v} >0 when {poly} evaluated at {b+v} should be <= 0")
 
             for poly in cell.eq_poly():
                 if abs(poly(b+v)) >= epsilon or abs(poly(sage_point)) > sum(abs(grad(sage_point)) for grad in poly.gradient())*epsilon:
                     cut_score_logger.debug(f"validate_point:{poly} evaluated at {b+v} != 0 when {poly} evaluated at {b+v} should be == 0: point: {point}, cell: {cell}")
-                    raise SolverHalt(f"{poly} evaluated at {b+v} != 0 when {poly} evaluated at {b+v} should be == 0")
+                    raise ModelViolation(f"{poly} evaluated at {b+v} != 0 when {poly} evaluated at {b+v} should be == 0")
         return b,v
 
 
@@ -431,7 +436,7 @@ class SteepestDirection(abstractCutScore):
         Returns a valid input linear function for solver to use in an LP problem.
         """
         if issubclass(solver, cvxpyCutGenProblemSolverInterface):
-            from cvxpy import Maximize
+            from cvxpy import Minimize, Maximize
             x = kwds['x']
             bkpt = kwds['bkpt']
             f_index = kwds['f_index']
@@ -441,8 +446,10 @@ class SteepestDirection(abstractCutScore):
             coord_names = ['gamma'+str(i) for i in range(len(bkpt))]
             param_obj = np.array([cut_score_in_value_params.coefficient(cut_score_in_value_params.parent().gens_dict()[name]) for name in coord_names])
             cut_score_logger.debug(f"Objective inputs... {param_obj, x}")
-            cvxpy_objective = Maximize(param_obj @ x)
-            return cvxpy_objective
+            if kwds['objective_sense'] == "maximize":
+                return Maximize(param_obj @ x)
+            else:
+                return Minimize(param_obj @ x)
 
 class SteepestDirection2(abstractCutScore):
     """
@@ -463,7 +470,7 @@ class SteepestDirection2(abstractCutScore):
         Returns a valid input linear function for solver to use in an LP problem.
         """
         if issubclass(solver, cvxpyCutGenProblemSolverInterface):
-            from cvxpy import Maximize
+            from cvxpy import Minimize, Maximize
             x = kwds['x']
             bkpt = kwds['bkpt']
             f_index = kwds['f_index']
@@ -472,8 +479,10 @@ class SteepestDirection2(abstractCutScore):
             cut_score_in_value_params = sum(pi(fractional(QQ(c))) for c in mip_obj)
             coord_names = ['gamma'+str(i) for i in range(len(bkpt))]
             param_obj = np.array([cut_score_in_value_params.coefficient(cut_score_in_value_params.parent().gens_dict()[name]) for name in coord_names])
-            cvxpy_objective = Maximize(2*param_obj @ x)
-            return cvxpy_objective
+            if kwds['objective_sense'] == "maximize":
+                return Maximize(2*param_obj @ x)
+            else:
+                return Minimize(2*param_obj @ x)
 
 
 class SCIP_STANDARD(abstractCutScore):

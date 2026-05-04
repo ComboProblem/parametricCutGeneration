@@ -6,11 +6,11 @@ class SolverError(Exception):
     pass
 
 
-class SolverHalt(Exception):
+class ModelViolation(Exception):
     pass
 
 
-class SolverTolReached(Exception):
+class SolverRelTolReached(Exception):
     pass
 
 
