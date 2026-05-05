@@ -5,6 +5,8 @@ Defines cut scores available to the cut generation problem.
 from cutgeneratingfunctionology.igp import *
 from .generic_solvers import cvxpyCutGenProblemSolverInterface
 from .execptions import *
+from numpy.linalg import norm
+from numpy import array, inf
 import logging
 import time
 
@@ -164,7 +166,9 @@ class cutScore:
         # we believe to up to rounding and L.C. that pi_p is a minimal function in the current cell
         # and satisfies the conditions of the model or will raise an error.
         b, v = self.validate_point(parameters)
+        prev_point = array(self.get_feasible_point()) # an inital feasible point is always found prior to runing.
         self.set_feasible_point(b+v)
+        point = array(b+v)
         pi = piecewise_function_from_breakpoints_and_values(b + [1], v + [0])
         row_data = self.get_MIP_row()
         sage_cut = [pi(fractional(QQ(bar_a_ij))) for bar_a_ij in row_data]
@@ -174,13 +178,10 @@ class cutScore:
             sage_result = -1*sage_result
         self._sage_cut = sage_cut
         self._sage_mip_obj = sage_mip_obj
-        if self.get_prev_result() is not None and sage_result != 0:
-            if abs(sage_result - self.get_prev_result())/sage_result < self._rel_tol:
-                cut_score_logger.debug(f"cutScore.__call__: Relative distance between successive solutions is less than {self._rel_tol}. Stopping non-linear solver.")
-                self.set_prev_result(sage_result)
-                raise SolverRelTolReached(f"cutScore.__call__: Relative distance between successive solutions is less than {self._rel_tol}. Stopping non-linear solver.")
-            else:
-                self.set_prev_result(sage_result)
+        if norm(point-prev_point, ord=inf) < self._rel_tol:
+            cut_score_logger.debug(f"cutScore.__call__: Relative distance between successive paramaterized solutions is less than {self._rel_tol}. Stopping non-linear solver.")
+            self.set_prev_result(sage_result)
+            raise SolverRelTolReached(f"cutScore.__call__: Relative distance between successive solutions is less than {self._rel_tol}. Stopping non-linear solver.")
         else:
             self.set_prev_result(sage_result)
         if self._timer is not None:
@@ -193,6 +194,8 @@ class cutScore:
         """
         Gradient of cutScore. This method should only be called after a __call__ has been made to cutScore.
         """
+        if self._objective_sense == "minimize":
+            return -1*self._cut_score.cut_score_grad(self._sage_cut, self._sage_mip_obj)
         return self._cut_score.cut_score_grad(self._sage_cut, self._sage_mip_obj)
 
     @staticmethod
@@ -200,6 +203,8 @@ class cutScore:
         """
         Hessian of cutScore. This method should only be called after a __call__ has been made to cutScore.
         """
+        if self._objective_sense == "minimize":
+            return -1*self._cut_score.cut_score_hess(self._sage_cut, self._sage_mip_obj)
         return self._cut_score.cut_score_hess(self._sage_cut, self._sage_mip_obj)
         
 
@@ -446,10 +451,10 @@ class SteepestDirection(abstractCutScore):
             coord_names = ['gamma'+str(i) for i in range(len(bkpt))]
             param_obj = np.array([cut_score_in_value_params.coefficient(cut_score_in_value_params.parent().gens_dict()[name]) for name in coord_names])
             cut_score_logger.debug(f"Objective inputs... {param_obj, x}")
-            if kwds['objective_sense'] == "maximize":
-                return Maximize(param_obj @ x)
-            else:
+            if kwds['objective_sense'] == "maximize": # see note about how solvers are phrased in cut_generation_problem _algorithm_full_space.
                 return Minimize(param_obj @ x)
+            else:
+                return Maximize(param_obj @ x)
 
 class SteepestDirection2(abstractCutScore):
     """

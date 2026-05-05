@@ -12,7 +12,7 @@ import logging
 import time
 
 cut_generation_problem_logger = logging.getLogger(__name__)
-cut_generation_problem_logger.setLevel(logging.ERROR)
+cut_generation_problem_logger.setLevel(logging.DEBUG)
 
 # minimal_function_cashe_logging = True
 
@@ -93,7 +93,7 @@ class cutGenerationProblem:
     r"""
     A class for solving a cut generation problem (cgp).
     
-    The cut generation problem is defined as max cutScore(cut) s.t. cut in cutSpace.
+    The cut generation problem is defined as max cutScore(cut) s.t. cut in CutPool.
     
     cutSpace is defined by the algorithm chosen.
     
@@ -123,6 +123,8 @@ class cutGenerationProblem:
     
     TESTS::
     >>> from parametricCutGen.cut_generation_problem import *
+    >>> import logging
+    >>> logging.disable()
     >>> gmic_equiv = cutGenerationProblem(algorithm="full", backend="pplite", cut_score="steepest_direction", max_num_of_bkpts=2)
     >>> cgp_full_4 = cutGenerationProblem(algorithm="full", backend="pplite", cut_score="steepest_direction", max_num_of_bkpts=4)
     >>> cgp_bkpt_as_param = cutGenerationProblem(algorithm="bkpt_as_param", backend="pplite", cut_score="steepest_direction", max_num_of_bkpts=100)
@@ -240,9 +242,9 @@ class cutGenerationProblem:
         frac_f = fractional(QQ(f))
         def cut_score(params):
             return self._cut_score(params)
-        if self._objective_sense == "maximize":
-            self._cut_score.set_objective_sense("minimize") # scipy solver is in the form of min f(x) s.t. x\in S =  max -f(x) s.t. x\in S 
-            best_result = -1*np.inf                          # f(x) = -1*cut_score(point) with objective sense min. 
+        if self._objective_sense == "maximize": # cgp written as max cut_score(cut) st. cut \in cutSpace
+            self._cut_score.set_objective_sense("minimize") # solvers are by default in the of min f(x) s.t. x\in S =  max -f(x) s.t. x\in S 
+            best_result = -1*np.inf                         # f(x) = -1*cut_score(point) with objective sense min. 
         elif self._objective_sense == "minimize":           # f(x) = cut_score(point) with objective sense max.
             self._cut_score.set_objective_sense("maximize")
             best_result = np.inf
@@ -442,7 +444,7 @@ class cutGenerationProblem:
         else:
             raise ValueError("This method only works for linear objective functions. Try using the bkpt_as_param algorithm.")
         obj_val, values, status, prob_res = self._solver.lp_solve(linear_constraints, objective, x=x)
-        cut_generation_problem_logger.debug(f"status: {status}, obj_val: {obj_val}}")
+        cut_generation_problem_logger.debug(f"status: {status}, obj_val: {obj_val}")
         values = [QQ(v) for v in values]
         point = sparse_bkpt+values
         self._cut_score.set_current_cell(value_polyhedron)
