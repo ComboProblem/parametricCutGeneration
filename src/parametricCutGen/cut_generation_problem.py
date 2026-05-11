@@ -65,6 +65,8 @@ def sparse_enough_breakpoints(bkpt_old, epsilon):
         bkpt[len(bkpt)-1] = 0
     return bkpt
 
+def inf_norm_of_cont_pwl(f, g):
+    return max([abs(v) for v in (f-g).values_at_end_points()])
 
 def log_problem_result(bkpt, val, binvarow, binvc, f):
     cut_generation_problem_logger.info(f"Cut generation problem solved.")
@@ -118,7 +120,7 @@ class cutGenerationProblem:
     :max_num_of_bkpts: - integer >= 2, maximum number of breakpoints a minimal function is allowed to have.
     :multithread: - bool, Not implemented, intended for "full" algorithm.
     :prove_seperator: - bool, proves every function used is actually a function that can be used to generate a separator.
-    :rel_tol: - real number >0, stopping condition for solving cgp. If the distance between two solutions of the cgp is less than `rel_tol` then they are considered equal and the solver will halt and return the most recent solution.
+    :rel_tol: - real number >=0, stopping condition for solving cgp. If the distance between two solutions of the cgp is less than `rel_tol` then they are considered equal and the solver will halt and return the most recent solution.
     :show_proof: - bool, Outputs proof from `cutgeneratingfunctionology`.
     
     TESTS::
@@ -204,7 +206,7 @@ class cutGenerationProblem:
         if rel_tol is not None:
             self._rel_tol = rel_tol
         else:
-            self._rel_tol = 10**-6
+            self._rel_tol = 0 # default to the dispatched solver's stopping conditions
         self._cut_score.set_rel_tol(self._rel_tol)
         self._cut_score.set_espilon(self._espilon)
         self._cut_score.set_lipschitz_constant(self._M)
