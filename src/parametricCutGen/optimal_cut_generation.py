@@ -13,13 +13,13 @@ optimal_cut_logger = logging.getLogger(__name__)
 # optimal_cut_logger.setLevel(logging.DEBUG)
 # Adapted from the example in the docs. https://pymodelopt.readthedocs.io/en/latest/tutorials/separator.html
 
-# write minimal example data collection gap problem issue/what i would need to do. 
+# Note; pplitepy has numeric issues. Use backend=None when large vaues may be encountered.
 class OptimalCut(Sepa):
     def __init__(self, *, write_mip_and_cut=False, file_name_base="OptimalCutData", max_number_of_data_records=None, cgp_kwds=None, paths=None):
         """
         TESTS::
         >>> from parametricCutGen.optimal_cut_generation import OptimalCut
-        >>> from pymodelopt import Model
+        >>> from piscipopt import Model
         >>> model = Model()
         >>> sepa = OptimalCut() # gmic by default
         >>> model.includeSepa(sepa, "optimal_cut", "full space gmic", priority=1000, freq=1)

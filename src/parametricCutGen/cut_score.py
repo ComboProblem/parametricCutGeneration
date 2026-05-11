@@ -409,13 +409,13 @@ class Parallelism(abstractCutScore):
     """
     Normalized cut parallelism score.
     """
-    def cut_score(self, cut, mip_obj):
+    def cut_score(cut, mip_obj):
         obj_norm = vector(mip_obj).norm()
         cut_norm = vector(cut).norm()
         dot_product = vector(mip_obj).row()*vector(cut).column()
         return (dot_product[0]/(obj_norm*cut_norm))[0]
     
-    def is_linear(self):
+    def is_linear():
         r"""
         Returns True if the cut score (when defined on the parameterized cut space) is linear.
         """
