@@ -10,7 +10,7 @@ import os
 import time
 
 optimal_cut_logger = logging.getLogger(__name__)
-# optimal_cut_logger.setLevel(logging.DEBUG)
+optimal_cut_logger.setLevel(logging.DEBUG)
 # Adapted from the example in the docs. https://pymodelopt.readthedocs.io/en/latest/tutorials/separator.html
 
 # Note; pplitepy has numeric issues. Use backend=None when large vaues may be encountered.
@@ -193,7 +193,9 @@ class OptimalCut(Sepa):
                 else:
                     assert model.isFeasZero(act - rlhs)
                     cutrhs -= cutelem * (rlhs - row.getConstant())
-
+        optimal_cut_logger.debug(f"f0={primsol}")
+        optimal_cut_logger.debug(f"cutcoefs={cutcoefs}")
+        optimal_cut_logger.debug(f"cutrhs={cutrhs}")
         return cutcoefs, cutrhs
 
     def sepaexeclp(self):
@@ -229,11 +231,12 @@ class OptimalCut(Sepa):
                     primsol = cols[c].getPrimsol()
                     assert model.getSolVal(None, var) == primsol
 
-                    if self.cgp._espilon <= model.frac(primsol) <= 1 - self.cgp._espilon: # use cgp notion of 0/1
+                    if .001 <= model.frac(primsol) <= 1 - .001: # use cgp notion of 0/1
                         tryrow = True
 
             # generate the cut!
             if tryrow:
+                optimal_cut_logger.debug(f"c={c}")
                 # get the row of B^-1 for this basic integer variable with fractional solution value
                 binvrow = model.getLPBInvRow(i)
 
@@ -243,56 +246,39 @@ class OptimalCut(Sepa):
                 # get current reduced costs for objective evaluation.
                 costs = [model.getColRedCost(j) for j in cols if j not in basisind]
 
-                cgf = self.cgp.solve(binvarow, costs, primsol) # produce an optimal cgf
+                cgf, cut_score = self.cgp.solve(binvarow, costs, primsol) # produce an optimal cgf
 
                 cutcoefs, cutrhs = self.getOptimalCutFromRow(cols, rows, binvrow, binvarow, primsol, cgf)
 
-                if self.write_mip_and_cut:
-                    optimal_cut_logger.debug(f"snapshot of prev mip")
-                    metadata = {"cut_on_row": c if c >= 0 else -c-1, "cut_number":self.ncuts, "mip_base_path":os.path.join(self.mip_and_cut_write_path, f"{self.file_name_base}_MIP_base_{self.ncuts}.lp"), "cut_path": os.path.join(self.mip_and_cut_write_path, f"{self.file_name_base}_cut_number_{self.ncuts}.lp")}
-                    self.model.writeMIP(metadata["mip_base_path"]) # snapshot of MIP
-                    optimal_cut_logger.debug(f"Dump current metadata: {metadata}")
-
-                cut = model.createEmptyRowSepa(self, "optimalcut%d_x%d"%(self.ncuts,c if c >= 0 else -c-1), lhs = None, rhs = cutrhs)
+                cut = model.createEmptyRowSepa(self, "optimal_cut%d_x%d"%(self.ncuts,c if c >= 0 else -c-1), lhs = None, rhs = cutrhs)
                 model.cacheRowExtensions(cut)
-                if self.write_mip_and_cut:
-                    cut_as_lp_string = " "
+
                 for j in range(len(cutcoefs)):
-                    if model.isFeasZero(cutcoefs[j]): # maybe here we need isFeasZero
+                    if model.isZero(cutcoefs[j]): # maybe here we need isFeasZero
                         continue
                     model.addVarToRow(cut, cols[j].getVar(), cutcoefs[j])
-                    if self.write_mip_and_cut:
-                        if  cutcoefs[j] > 0:
-                            cut_as_lp_string += f"+{cutcoefs[j]}"
-                        else:
-                            cut_as_lp_string += f"{cutcoefs[j]}"
-                        cut_as_lp_string += f" t_x{cols[j].getVar()} "
-                if self.write_mip_and_cut:
-                    cut_as_lp_string += f"<= {cutrhs}\n"
-                    cut_file = open(metadata["cut_path"],  "w")
-                    cut_file.write("optimalcut%d_x%d: "%(self.ncuts,c if c >= 0 else -c-1))
-                    cut_file.write(cut_as_lp_string)
-                    cut_file.close()
-                model.flushRowExtensions(cut)
-                infeasible = model.addCut(cut, forcecut=True)
-                if infeasible:
-                    result = SCIP_RESULT.CUTOFF
-                else:
-                    # Cut was found to be useful; write data and log information as necessary
-                    # log result
-                    result = SCIP_RESULT.SEPARATED
+
+                if cut.getNNonz() == 0:
+                    assert model.isFeasNegative(cutrhs)
+                    return {"result": SCIP_RESULT.CUTOFF}
+
+
                 # Only take efficacious cuts, except for cuts with one non-zero coefficient (= bound changes)
                 # the latter cuts will be handled internally in sepastore.
-                if self.write_mip_and_cut:
-                    metadata = metadata | {"result": result}
-                    with open(os.path.join(self.metadata_write_path, f"{self.file_name_base}_metadata_{self.ncuts}.json"), "w") as metadata_json:
-                        json.dump(metadata, metadata_json)
-                self.ncuts += 1
+                if cut.getNNonz() == 1 or model.isCutEfficacious(cut):
+
+                    # flush all changes before adding the cut
+                    model.flushRowExtensions(cut)
+
+                    infeasible = model.addCut(cut, forcecut=False)
+                    self.ncuts += 1
+
+                    if infeasible:
+                       result = SCIP_RESULT.CUTOFF
+                    else:
+                       result = SCIP_RESULT.SEPARATED
                 model.releaseRow(cut)
-                if self.write_mip_and_cut:
-                    if self.ncuts > self.max_number_of_data_records:
-                        optimal_cut_logger.debug(f"ncuts:{self.ncuts}")
-                        model.interruptSolve()
+
         return {"result": result}
 
 class GMI(Sepa):
@@ -469,7 +455,9 @@ class GMI(Sepa):
                 else:
                     assert scip.isFeasZero(act - rlhs)
                     cutrhs -= cutelem * (rlhs - row.getConstant())
-
+        optimal_cut_logger.debug(f"f0={f0}")
+        optimal_cut_logger.debug(f"cutcoefs={cutcoefs}")
+        optimal_cut_logger.debug(f"cutrhs={cutrhs}")
         return cutcoefs, cutrhs
 
     def sepaexeclp(self):
@@ -510,6 +498,7 @@ class GMI(Sepa):
 
             # generate the cut!
             if tryrow:
+                optimal_cut_logger.debug(f"row={c}")
                 # get the row of B^-1 for this basic integer variable with fractional solution value
                 binvrow = scip.getLPBInvRow(i)
 
@@ -540,7 +529,7 @@ class GMI(Sepa):
                     # flush all changes before adding the cut
                     scip.flushRowExtensions(cut)
 
-                    infeasible = scip.addCut(cut, forcecut=True)
+                    infeasible = scip.addCut(cut, forcecut=False)
                     self.ncuts += 1
 
                     if infeasible:
@@ -550,4 +539,3 @@ class GMI(Sepa):
                 scip.releaseRow(cut)
 
         return {"result": result}
-

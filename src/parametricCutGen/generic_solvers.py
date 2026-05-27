@@ -244,7 +244,7 @@ class cvxpyCutGenProblemSolverInterface(abstractCutGenProblemSolverInterface):
         
         x = solver_options['x']# intnded to be form the constraints x
         prob = Problem(cut_score_objective, cell_constraints)
-        result = prob.solve()        
+        result = prob.solve(solver="OSQP")        
         return prob.value, x.value, None, prob
 
     @staticmethod

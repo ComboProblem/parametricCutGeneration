@@ -12,7 +12,7 @@ import logging
 import time
 
 cut_generation_problem_logger = logging.getLogger(__name__)
-cut_generation_problem_logger.setLevel(logging.DEBUG)
+cut_generation_problem_logger.setLevel(logging.ERROR)
 
 # minimal_function_cashe_logging = True
 
@@ -134,24 +134,13 @@ class cutGenerationProblem:
     >>> binvarow = [3.2, 4.1, 5.6, .2]
     >>> binvc = [1.2, 4.4, 5.6, -.1]
     >>> f = 1.8 # aka b of the row
-    >>> sol_is_gmic = gmic_equiv.solve(binvarow, binvc, f)
-    >>> cgp_full_4_sol = cgp_full_4.solve(binvarow, binvc, f)
-    >>> cgp_bkpt_as_param_sol = cgp_bkpt_as_param.solve(binvarow, binvc, f)
-    >>> cpg_value_poly_sol = cgp_value_poly_lp.solve(binvarow, binvc, f) # ||h-g||_infty ~ 0.015. g and h should have a similar solution since the problems are equivlant; impmentation choices make a difference!
-    >>> cut_score_for_gmic_equiv =  sum(binvc[i]*sol_is_gmic(fractional(binvarow[i])) for i in range(4)); cut_score_for_gmic_equiv
-    5.02500000000000
-    >>> cut_score_for_cgp_full_4_sol = sum(binvc[i]*cgp_full_4_sol(fractional(binvarow[i])) for i in range(4)); cut_score_for_cgp_full_4_sol # the solution is GMIC
-    5.02500000000000
-    >>> cut_score_for_cgp_bkpt_as_param = sum(binvc[i]*cgp_bkpt_as_param_sol(fractional(binvarow[i])) for i in range(4)); cut_score_for_cgp_bkpt_as_param # Using additonal breakpoints can improve the result.
-    5.69166666666666
-    >>> cut_score_for_cgp_value_poly_lp = sum(binvc[i]*cpg_value_poly_sol(fractional(binvarow[i])) for i in range(4)); cut_score_for_cgp_value_poly_lp
-    5.63837460764390
-    >>> cut_score_for_gmic = sum(binvc[i]*sol_is_gmic(fractional(binvarow[i])) for i in range(4)); cut_score_for_gmic
-    5.02500000000000
+    >>> sol_is_gmic, cut_score_gmic = gmic_equiv.solve(binvarow, binvc, f)
+    >>> cgp_full_4_sol, cut_score_cgp_full_4 = cgp_full_4.solve(binvarow, binvc, f)
+    >>> cgp_bkpt_as_param_sol, cut_score_cgp_bkpt_as_param  = cgp_bkpt_as_param.solve(binvarow, binvc, f)
+    >>> cgp_value_poly_sol, cut_score_cgp_value_poly = cgp_value_poly_lp.solve(binvarow, binvc, f) # ||h-g||_infty ~ 0.015. g and h should have a similar solution since the problems are equivlant; impmentation choices make a difference!
     >>> cgp_full_4_min = cutGenerationProblem(algorithm="full", backend="pplite", cut_score="steepest_direction", max_num_of_bkpts=4, objective_sense="minimize")
-    >>> cpg_full_4_min_sol = cgp_full_4_min.solve(binvarow, binvc, f)
-    >>> cut_score_for_cgp_full_4_min = sum(binvc[i]*cpg_full_4_min_sol(fractional(binvarow[i])) for i in range(4)); cut_score_for_cgp_full_4_min
-    4.64166666666666
+    >>> cgp_full_4_min_sol, cut_score_cgp_4_min = cgp_full_4_min.solve(binvarow, binvc, f)
+
     """
     # *, makes arguments keyword only. Order shouldn't matter in terms of inputs. The problem will write it's own parameters into a cgp_params dict.
     def __init__(self, *, algorithm=None, backend=None, cut_score=None,  epsilon=None, M = None, max_cgp_solver_time=None, max_num_of_bkpts=4, multithread=False, objective_sense="maximize", prove_seperator=False, rel_tol=None, show_proof=False):
@@ -198,11 +187,11 @@ class cutGenerationProblem:
         if epsilon is not None:
             self._espilon = epsilon
         else:
-            self._espilon = 10**-6
+            self._espilon = 0.0000001
         if M is not None:
             self._M = M
         else:
-            self._M = 10**6
+            self._M = 10**7
         if rel_tol is not None:
             self._rel_tol = rel_tol
         else:
@@ -224,15 +213,13 @@ class cutGenerationProblem:
 
         Passes any instructions to the underlying solver.
         """
-        # assume MIP is a scip model; really we should be passing in and LP relaxation with variable information here.
-        # The cut generation problem
         if self._algorithm == "full":
-            cgf = self._algorithm_full_space(binvarow, binvc, f)
+            cgf, cut_score = self._algorithm_full_space(binvarow, binvc, f)
         elif self._algorithm == "bkpt_as_param":
-            cgf = self._algorithm_bkpt_as_param(binvarow, binvc, f)
+            cgf, cut_score = self._algorithm_bkpt_as_param(binvarow, binvc, f)
         elif self._algorithm == "value_poly_lp":
-            cgf = self._algorithm_value_poly_lp(binvarow, binvc, f)
-        return cgf
+            cgf, cut_score = self._algorithm_value_poly_lp(binvarow, binvc, f)
+        return cgf, cut_score
 
     def _algorithm_full_space(self, binvarow, binvc, f):
         r"""
@@ -324,7 +311,7 @@ class cutGenerationProblem:
             res = minimality_test(pi_p) # add someway to log certificates.
             if not res:
                 cut_generation_problem_logger.error(f"minimality of  {pi_p}: {res}")
-        return pi_p
+        return pi_p, best_result
 
     def _algorithm_bkpt_as_param(self, binvarow, binvc, f):
         """
@@ -357,6 +344,7 @@ class cutGenerationProblem:
         model_sparsity = max(float(1/self._max_num_of_bkpts), self._espilon)
         sparse_bkpt = unique_list(sparse_enough_breakpoints(symmetrized_bkpts, model_sparsity))
         if frac_f not in sparse_bkpt:
+            sparse_bkpt = [x for x in sparse_bkpt if abs(frac_f -x) > self._espilon]
             sparse_bkpt.append(frac_f)
         num_bkpt = len(sparse_bkpt)
         if num_bkpt == 2:
@@ -371,9 +359,12 @@ class cutGenerationProblem:
             return pi_p
         # ensure a breakpoint sequence is given
         sparse_bkpt.sort()
-        f_index = sparse_bkpt.index(frac_f)
+                
         self._cut_score.set_f_index(f_index)
-        value_polyhedron = value_nnc_polyhedron(sparse_bkpt, f_index, backend=self._backend)
+        # for numerical reasons, round to 
+        round_for_solver = lambda x : QQ(ceil(x/self._espilon)*self._espilon)
+        cut_generation_problem_logger.debug(f"rounding_for_solver= {[round_for_solver(x) for x in sparse_bkpt]}")
+        value_polyhedron = value_nnc_polyhedron([round_for_solver(x) for x in sparse_bkpt], f_index, backend=self._backend)
         cut_generation_problem_logger.debug(f"Dim of value polyhedron :{value_polyhedron.upstairs().ambient_dim()}")
         point = list(value_polyhedron.find_point())
         # initialize a feasible point for the cut scoring function to remember.
@@ -397,7 +388,7 @@ class cutGenerationProblem:
         if self._prove_seperator:
             res = minimality_test(pi_p, self._show_proof) # add someway to log certificates.
             cut_generation_problem_logger.info(f"Minimality of cgf: {res}")
-        return pi_p
+        return pi_p, cut_score(result_point)
 
     def _algorithm_value_poly_lp(self, binvarow, binvc, f):
         self._cut_score.set_MIP_row(binvarow)
@@ -417,10 +408,12 @@ class cutGenerationProblem:
                 symmetrized_bkpts += [sage_b, 1+b_sym]
         symmetrized_bkpts = unique_list(symmetrized_bkpts)
         symmetrized_bkpts.sort()
+        cut_generation_problem_logger.debug(f"symmetrized_bkpts={symmetrized_bkpts}")        
         # it might be worth while to ensure if we have sufficient difference between breakpoints.
         model_sparsity = max(float(1/self._max_num_of_bkpts), self._espilon)
         sparse_bkpt = unique_list(sparse_enough_breakpoints(symmetrized_bkpts, model_sparsity))
         if frac_f not in sparse_bkpt:
+            sparse_bkpt = [x for x in sparse_bkpt if abs(frac_f -x) > self._espilon]
             sparse_bkpt.append(frac_f)
         num_bkpt = len(sparse_bkpt)
         if num_bkpt == 2:
@@ -428,17 +421,24 @@ class cutGenerationProblem:
             cut_generation_problem_logger.debug("Dim of value polyhedron: 0")
             pi_p =  gmic(frac_f)
             log_problem_result(sparse_bkpt, [0, 1], binvarow, binvc, f)
+            sage_cut = [pi_p(fractional(QQ(bar_a_ij))) for bar_a_ij in binvarow]
+            sage_mip_obj =  [QQ(bar_cj) for bar_cj in binvc]
+            # lord in heaven and the goddess below forgive me becuase i've written some fuckin' aweful code.
+            score = float(self._cut_score._cut_score.cut_score(sage_cut, sage_mip_obj))
             if self._prove_seperator:
                 # we always have a separator here.
                 cut_generation_problem_logger.debug(f"The minimality of the found cgf is {True}")
             # return gmic, the feasible set for the optimization problem is a single point which corresponds to gmic.
-            return pi_p
+            return pi_p, score
         # ensure a breakpoint sequence is given
         sparse_bkpt.sort()
         sparse_bkpt = [QQ(bi) for bi in sparse_bkpt]
         f_index = sparse_bkpt.index(frac_f)
         self._cut_score.set_f_index(f_index)
-        value_polyhedron = value_nnc_polyhedron_value_cords(sparse_bkpt, f_index, backend=self._backend)
+        cut_generation_problem_logger.debug(f"sparse_bkpt={sparse_bkpt}")
+        round_for_solver = lambda x : QQ(ceil(x/QQ(self._espilon))*self._espilon)
+        cut_generation_problem_logger.debug(f"rounding_for_solver= {[round_for_solver(x) for x in sparse_bkpt]}")
+        value_polyhedron = value_nnc_polyhedron_value_cords([round_for_solver(x) for x in sparse_bkpt], f_index, backend=self._backend)
         cut_generation_problem_logger.debug(f"Dim of value polyhedron : {value_polyhedron.upstairs().ambient_dim()}")
         linear_constraints, x =  self._solver.write_linear_constraints_from_bsa(value_polyhedron)
         if self._cut_score._cut_score.is_linear():
@@ -452,15 +452,22 @@ class cutGenerationProblem:
         self._cut_score.set_current_cell(value_polyhedron)
         try:
             b, v = self._cut_score.validate_point(point)
+            self._cut_score.set_feasible_point(b+v)
+            score = self._cut_score(b+v)
+            pi_p = piecewise_function_from_breakpoints_and_values(b+[1], v+[0])
         except ModelViolation:
             b = sparse_bkpt
             v = values
-        pi_p = piecewise_function_from_breakpoints_and_values(b+[1], v+[0])
+            pi_p = piecewise_function_from_breakpoints_and_values(b+[1], v+[0])
+            sage_cut = [pi_p(fractional(QQ(bar_a_ij))) for bar_a_ij in binvarow]
+            sage_mip_obj =  [QQ(bar_cj) for bar_cj in binvc]
+            # lord in heaven and the goddess below forgive me becuase i've written some fuckin' aweful code.
+            score = float(self._cut_score._cut_score.cut_score(sage_cut, sage_mip_obj))
         log_problem_result(b, v, binvarow, binvc, f)
         if self._prove_seperator:
             res = minimality_test(pi_p, self._show_proof) # add someway to log certificates.
             cut_generation_problem_logger.info(f"Minimality of cgf: {res}")
-        return pi_p
+        return pi_p, score
 
 
     def _algorithm_custom(self, binvarow, binvc, f):

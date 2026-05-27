@@ -1,107 +1,67 @@
 from pyscipopt import Model, SCIP_EVENTTYPE, SCIP_RESULT, Eventhdlr, SCIP_PARAMSETTING
+import os
 import logging
-
-# Data collection moved to optimal cut generation.
 
 data_collection_logger = logging.getLogger(__name__)
 data_collection_logger.setLevel(logging.DEBUG)
-# for now, a test class to count number of sepa added and interupt after some have been added
-# how to haldel inf gap?
-# type s of data; how long to solve; ect. 
 
-# get all nodes which 
-class CollectGapNodes(Eventhdlr):
-    def __init__(self, model, max_number_of_gap_updates,  cut_name="", write_node_data=False, write_file_name_style=None, write_file_dir=""):
-        """
-        TESTS::
-        >>> from parametricCutGen.scip_data_collection_events import CutGapDataRecording
-        >>> from pyscipopt import Model
-        >>> import logging; logging.disable()
-        >>> model = Model()
-        >>> data_record = CollectGapNodes(model, 10)
-        >>> model.includeEventhdlr(data_record, "record_gap_data", "Records dual gap data when optimal_cut is called")
-        """
-        pass
+def record_data(model: Model, snaphot_frequency=10000,  write_path=""):
+    """
+    Attaches an event handler to a given SCIP model that collects primal and dual solutions,
+    along with the solving time when they were found.
+    The data is saved in model.data["primal_log"] and model.data["dual_log"]. They consist of
+    a list of tuples, each tuple containing the solving time and the corresponding solution.
 
-class checkCutsAdded(Eventhdlr):
-    def __init__(self, model):
-        Eventhdlr.__init__(model)
-        self.count = 0 
-        
-    def eventinit(self):
-        self.model.catchEvent(SCIP_EVENTTYPE.LPSOLVED, self)
+    A usage example can be found in examples/finished/plot_primal_dual_evolution.py. The
+    example takes the information provided by this recipe and uses it to plot the evolution
+    of the dual and primal bounds over time. 
+    """
+    class GapEventhdlr(Eventhdlr):
+        def eventinit(self): # we want to collect best primal solutions and best dual solutions
+            self.model.catchEvent(SCIP_EVENTTYPE.BESTSOLFOUND, self)
+            self.model.catchEvent(SCIP_EVENTTYPE.DUALBOUNDIMPROVED, self)
 
-    def eventexec(self, event):
-        data_collection_logger.debug(f"event: {event.getName()}")       
-        if self.model.getCurrentNode().getDepth() > 1:
+        def eventexec(self, event):
+            # if a new best primal solution was found, we save when it was found and also its objective
+            if event.getType() == SCIP_EVENTTYPE.BESTSOLFOUND:
+                self.model.data["primal_log"].append([self.model.getSolvingTime(), self.model.getPrimalbound()])
+            
+            if event.getType() == SCIP_EVENTTYPE.DUALBOUNDIMPROVED:
+                self.model.data["dual_log"].append([self.model.getSolvingTime(), self.model.getDualbound()])
+
+    class SnapShothdlr(Eventhdlr):
+        def __init__(self, snaphot_frequency, write_path):
+            self.snaphot_frequency = snaphot_frequency
+            self.write_path = write_path
+            self.count = 0
+        def eventinit(self):
+            self.model.catchEvent(SCIP_EVENTTYPE.LPSOLVED, self)
+
+        def eventexec(self, event):
+            if self.count % self.snaphot_frequency == 0:
+                self.model.writeMIP(os.path.join(self.write_path, f"node_lp_{self.count}.lp"))
+                self.model.data["snaphot_count"].append(self.count)
+                self.model.data["snaphot_n_cuts"].append(self.model.getNCutsApplied())
+                self.model.data["snaphot_node_depth"].append(self.model.getCurrentNode().getDepth())
             self.count += 1
-            self.model.writeMIP(f"node_lp_{self.count}.lp")
-        if self.count == 10:
-            self.model.interruptSolve()
-#
+            
 
+             
 
-class disableCuts(Eventhdlr):
-    def __init__(self, model):
-        self.model = model
-    def eventinit(self):
-        self.model.catchEvent(SCIP_EVENTTYPE.NODEFOCUSED, self) # the event is called whenever a node is about to be solved
+    if not hasattr(model, "data") or model.data==None:
+        model.data = {}
 
-    def eventexec(self, event):
-        if self.model.getCurrentNode().getDepth() > 1: # if we aren't in the root node
-            self.model.setSeparating(SCIP_PARAMSETTING.OFF) # disable separators
-        else:
-            self.model.setSeparating(SCIP_PARAMSETTING.DEFAULT)
-            self.model.readParams("./src/Experiments/paramFiles/scip_disable_other_cuts.set") # Disable scip avilaible 
+    model.data.update({
+            'primal_log': [],
+            'dual_log': [],
+            'snaphot_count': [],
+            'snaphot_node_depth': [],
+            'snaphot_n_cuts': []
+            })
 
-class GapData(Eventhdlr):
-    def __init__(self, model):
-        Eventhdlr.__init__(model)
-        self.lp_count = 0
-        self.gap_update_count = 0
-        self.ndual_bound_changes = 0
-        self.measured_depths = [0, 1, 2, 3, 4, 5]
-        
-    def eventinit(self):
-        # self.model.catchEvent(SCIP_EVENTTYPE.GAPUPDATED, self)
-        self.model.catchEvent(SCIP_EVENTTYPE.LPSOLVED, self)
-        # self.model.catchEvent(SCIP_EVENTTYPE.DUALBOUNDIMPROVED, self)
-        # self.model.catchRowEvent(row, eventtype, eventhdlr)
-    def eventexec(self, event):
-        # LP solution
-        data_collection_logger.debug(f"event: {event.getName()}")
-        if event.getName() is "DUALBOUNDIMPROVED":
-            data_collection_logger.debug(event.getOldBound())
-            data_collection_logger.debug(event.getNewBound())
-            self.ndual_bound_changes += 1
-            # self.model.constructLP()
-            # self.model.writeLP(f"update_lp_{self.gap_update_count}.lp") # node record            
-        if event.getName() is "LPSOLVED":
-            data_collection_logger.debug(f"number of sepa rounds: {self.model.getNCutsApplied()}")
-            if self.model.getNCutsApplied() == 1:
-                node = event.getNode()
-#            model_node = self.model.getCurrentNode()
-#            data_collection_logger.debug(f"event node:{node.getNumber()}, depth: {node.getDepth()}, added cons: {node.getNAddedConss()}")
-#            for con in node.getAddedConss():
-#                data_collection_logger.debug(f"con handlr: {con.getConshdlrName()}")
-#                data_collection_logger.debug(con.isStickingAtNode())
-#                data_collection_logger.debug(f"con dual sol: {self.model.getDualsolLinear(con)}")
-#            if node.getDepth() in self.measured_depths:
-                self.lp_count += 1
-                self.model.constructLP()
-                self.model.writeMIP(f"node_lp_{self.lp_count}.lp") # node record
-                for con in node.getAddedConss():
-                    data_collection_logger.debug(f"con handlr: {con.getConshdlrName()}")
-                    data_collection_logger.debug(con.isStickingAtNode())
-                    data_collection_logger.debug(f"con dual sol: {self.model.getDualsolLinear(con)}")
-    # gap updated
-#        if event.getName is "GAPUPDATED":
-#            data_collection_logger.debug(event.getOldBound())
-#            data_collection_logger.debug(event.getNewBound())
-#            self.gap_update_count += 1
-#            self.model.writeLP(f"update_lp_{self.gap_update_count}.lp") # node record
-        if self.gap_update_count > 10 or self.lp_count > 10 or self.ndual_bound_changes>100 :
-            data_collection_logger.debug(f"counts: {self.gap_update_count}, {self.lp_count}, {self.ndual_bound_changes}")
-            self.model.interruptSolve()
-
+    gap_hdlr = GapEventhdlr()
+    snapshot_hdlr = SnapShothdlr(snaphot_frequency=snaphot_frequency, write_path=write_path)
+    model.includeEventhdlr(gap_hdlr, "gapEventHandler", "Event handler which collects primal and dual solution evolution")
+    model.includeEventhdlr(snapshot_hdlr, "snapShothdlr", "Event handler which takes LP snapshots and verifies experimental paramteters")
+    return model
 

@@ -16,18 +16,19 @@ backend = "pplite"
 [experiment.parameters]
 algorithm = [ "bkpt_as_param", "full", "value_poly_lp"]
 
-[experiment.parameters.bkpt_as_param]
-cut_score = [ "steepest", "parallelism" ] # parallelism here is equivalent to value poly lp
-max_num_of_bkpts = [ 2, "int(1/epsilon)" ] # modeled by to setting epsilon = 1/(max_num_bkpt), controls size of sub problem
-max_number_of_cuts = [ 1, 10 ]
+# needs more development
+#[experiment.parameters.bkpt_as_param]
+#cut_score = [ "steepest", "parallelism" ] # parallelism here is equivalent to value poly lp
+#max_num_of_bkpts = [ 2, "int(1/epsilon)" ] # modeled by to setting epsilon = 1/(max_num_bkpt), controls size of sub problem
+#max_number_of_cuts = [ 1, 10 ]
 
-
-[experiment.parameters.full]
-cut_score = [ "steepest", "parallelism" ] 
-max_num_of_bkpts = [ 2, 4 ]
-max_number_of_cuts = [ 1, 10 ]
+# needs more development
+# [experiment.parameters.full]
+# cut_score = [ "steepest", "parallelism" ] 
+# max_num_of_bkpts = [ 2, 4 ]
+# max_number_of_cuts = [ 1, 10 ]
 
 [experiment.parameters.value_poly_lp]
 cut_score = [ "parallelism", "2*parallelism" ] 
 max_num_of_bkpts = [ 2, "int(1/epsilon)" ] # modeled by to setting epsilon = 1/(max_num_bkpt), controls size of sub problem
-max_number_of_cuts = [ 1, 10 ]
+max_number_of_cuts = [ 1, 10, 100 ]

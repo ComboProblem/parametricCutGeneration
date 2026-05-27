@@ -1,291 +1,52 @@
 # from parametricCutGen.scip_data_collection_events import CutGapDataRecording
 from parametricCutGen.optimal_cut_generation import OptimalCut, GMI
 from parametricCutGen.logging_utils import * # cgp_written_log is here
+from parametricCutGen.scip_data_collection_events import record_data
 from pyscipopt import Model
 from pyscipopt import Model, quicksum, SCIP_PARAMSETTING, exp, log, sqrt, sin
+from pyscipopt.scip import Cutsel
 from typing import List
 
 import logging
 
 test_logging = logging.getLogger(__name__)
+test_logging.setLevel(logging.DEBUG)
 
 
-def random_mip_1(disable_sepa=True, disable_heur=True, disable_presolve=True, node_lim=2000, small=False):
-    model = Model()
+model = Model() # from https://github.com/scipopt/PySCIPOpt/blob/master/tests/helpers/utils.py\
+model.readProblem(filename="/home/acadia/Downloads/gen-ip016.mps")
+#logging.disable()
+sepa = OptimalCut(cgp_kwds={"algorithm" : "value_poly_lp", "max_num_of_bkpts": 2}) # From the example of seperator; https://pyscipopt.readthedocs.io/en/latest/tutorials/separator.html]
+#sepa = GMI()
+#model.readParams("src/Experiments/paramFiles/scip_disable_other_cuts.set") # see link; https://github.com/ComboProblem/parametricCutGeneration/blob/main/src/Experiments/paramFiles/scip_disable_other_cuts.set
+model.setSeparating(SCIP_PARAMSETTING.OFF)
+model.includeSepa(sepa, "optimal_cut", "optimal_cut test", priority=10000, freq=0)
+#model.includeSepa(sepa, "gmi", "gmi test", priority=10000, freq=0)
+model.setHeuristics(SCIP_PARAMSETTING.OFF)
+model.setPresolve(SCIP_PARAMSETTING.OFF)
+#model.disablePropagation()
+#cutsel = TestCutsel()
+#model.includeCutsel(cutsel, 'test_cut_sel', 'test', 5000000)
+model.setParam("separating/maxcutsroot", 1)
+model.setParam("separating/maxroundsroot", 1)
+#model.setParam("separating/poolfreq", 0)
+#model.setParam("separating/maxroundsrootsubrun", -1)
+#model.setParam("separating/maxcuts", 1)
+#model.setParam("separating/maxcutsgenfactor", 1)
+#model.setParam("separating/maxcutsrootgenfactor", -1)
+#model.setParam("separating/maxrounds", 1)
+#model.setParam("separating/maxruns", 1)
+model.setParam("branching/random/priority", 20000)
+model.setParam("limits/nodes", 100)
+model=record_data(model, 10) # redirecting write pathissue?
+#add_cut_at_root = addCutsAtRoot(model)
+# disable = disableCuts(model)
+# model.includeEventhdlr(disable, "disable_other_cuts", "disable other cuts aside from the targeted cut at depths not at the root")
+#model.includeEventhdlr(add_cut_at_root, "add cuts", "cuts_added")
+model.optimize()
+model.printStatistics()
+print(model.data)
 
-    x0 = model.addVar(lb=-2, ub=4)
-    r1 = model.addVar()
-    r2 = model.addVar()
-    y0 = model.addVar(lb=3)
-    t = model.addVar(lb=None)
-    l = model.addVar(vtype="I", lb=-9, ub=18)
-    u = model.addVar(vtype="I", lb=-3, ub=99)
-
-    more_vars = []
-    if small:
-        n = 100
-    else:
-        n = 500
-    for i in range(n):
-        more_vars.append(model.addVar(vtype="I", lb=-12, ub=40))
-        model.addCons(quicksum(v for v in more_vars) <= (40 - i) * quicksum(v for v in more_vars[::2]))
-
-    for i in range(100):
-        more_vars.append(model.addVar(vtype="I", lb=-52, ub=10))
-        if small:
-            model.addCons(quicksum(v for v in more_vars[50::2]) <= (40 - i) * quicksum(v for v in more_vars[65::2]))
-        else:
-            model.addCons(quicksum(v for v in more_vars[50::2]) <= (40 - i) * quicksum(v for v in more_vars[405::2]))
-
-    model.addCons(r1 >= x0)
-    model.addCons(r2 >= -x0)
-    model.addCons(y0 == r1 + r2)
-    model.addCons(t + l + 7 * u <= 300)
-    model.addCons(t >= quicksum(v for v in more_vars[::3]) - 10 * more_vars[5] + 5 * more_vars[9])
-    model.addCons(more_vars[3] >= l + 2)
-    model.addCons(7 <= quicksum(v for v in more_vars[::4]) - x0)
-    model.addCons(quicksum(v for v in more_vars[::2]) + l <= quicksum(v for v in more_vars[::4]))
-
-    model.setObjective(t - quicksum(j * v for j, v in enumerate(more_vars[20:-40])))
-
-    if disable_sepa:
-        model.setSeparating(SCIP_PARAMSETTING.OFF)
-    if disable_heur:
-        model.setHeuristics(SCIP_PARAMSETTING.OFF)
-    if disable_presolve:
-        model.setPresolve(SCIP_PARAMSETTING.OFF)
-    model.setParam("limits/nodes", node_lim)
-
-    return model
-
-
-
-def knapsack_model(weights=[4, 2, 6, 3, 7, 5], costs=[7, 2, 5, 4, 3, 4], knapsack_size = 15):
-    # create solver instance
-    s = Model("Knapsack")
-
-    # setting the objective sense to maximise
-    s.setMaximize()
-    s.setPresolve(SCIP_PARAMSETTING.OFF)
-    s.setHeuristics(SCIP_PARAMSETTING.OFF)
-    assert len(weights) == len(costs)
-
-    # adding the knapsack variables
-    knapsackVars = []
-    varNames = []
-    varBaseName = "Item"
-    for i in range(len(weights)):
-        varNames.append(varBaseName + "_" + str(i))
-        knapsackVars.append(s.addVar(varNames[i], vtype='I', obj=costs[i], ub=1.0))
-
-    # adding a linear constraint for the knapsack constraint
-    s.addCons(quicksum(w * v for (w, v) in zip(weights, knapsackVars)) <= knapsack_size)
-    return s
-
-
-def bin_packing_model(sizes: List[int], capacity: int) -> Model:
-    model = Model("Binpacking")
-    n = len(sizes)
-    x = {}
-    for i in range(n):
-        for j in range(n):
-            x[i, j] = model.addVar(vtype="B", name=f"x{i}_{j}")
-    y = [model.addVar(vtype="B", name=f"y{i}") for i in range(n)]
-
-    for i in range(n):
-        model.addCons(
-            quicksum(x[i, j] for j in range(n)) == 1
-        )
-
-    for j in range(n):
-        model.addCons(
-            quicksum(sizes[i] * x[i, j] for i in range(n)) <= capacity * y[j]
-        )
-
-    model.setObjective(
-        quicksum(y[j] for j in range(n)), "minimize"
-    )
-
-    return model
-
-
-# test gastrans: see example in <model path>/examples/CallableLibrary/src/gastrans.c
-# of course there is a more pythonic/elegant way of implementing this, probably
-# starting by using a proper graph structure
-def gastrans_model():
-    GASTEMP = 281.15
-    RUGOSITY = 0.05
-    DENSITY = 0.616
-    COMPRESSIBILITY = 0.8
-    nodes = [
-        #   name          supplylo   supplyup pressurelo pressureup   cost
-        ("Anderlues", 0.0, 1.2, 0.0, 66.2, 0.0),  # 0
-        ("Antwerpen", None, -4.034, 30.0, 80.0, 0.0),  # 1
-        ("Arlon", None, -0.222, 0.0, 66.2, 0.0),  # 2
-        ("Berneau", 0.0, 0.0, 0.0, 66.2, 0.0),  # 3
-        ("Blaregnies", None, -15.616, 50.0, 66.2, 0.0),  # 4
-        ("Brugge", None, -3.918, 30.0, 80.0, 0.0),  # 5
-        ("Dudzele", 0.0, 8.4, 0.0, 77.0, 2.28),  # 6
-        ("Gent", None, -5.256, 30.0, 80.0, 0.0),  # 7
-        ("Liege", None, -6.385, 30.0, 66.2, 0.0),  # 8
-        ("Loenhout", 0.0, 4.8, 0.0, 77.0, 2.28),  # 9
-        ("Mons", None, -6.848, 0.0, 66.2, 0.0),  # 10
-        ("Namur", None, -2.120, 0.0, 66.2, 0.0),  # 11
-        ("Petange", None, -1.919, 25.0, 66.2, 0.0),  # 12
-        ("Peronnes", 0.0, 0.96, 0.0, 66.2, 1.68),  # 13
-        ("Sinsin", 0.0, 0.0, 0.0, 63.0, 0.0),  # 14
-        ("Voeren", 20.344, 22.012, 50.0, 66.2, 1.68),  # 15
-        ("Wanze", 0.0, 0.0, 0.0, 66.2, 0.0),  # 16
-        ("Warnand", 0.0, 0.0, 0.0, 66.2, 0.0),  # 17
-        ("Zeebrugge", 8.87, 11.594, 0.0, 77.0, 2.28),  # 18
-        ("Zomergem", 0.0, 0.0, 0.0, 80.0, 0.0)  # 19
-    ]
-    arcs = [
-        # node1  node2  diameter length active */
-        (18, 6, 890.0, 4.0, False),
-        (18, 6, 890.0, 4.0, False),
-        (6, 5, 890.0, 6.0, False),
-        (6, 5, 890.0, 6.0, False),
-        (5, 19, 890.0, 26.0, False),
-        (9, 1, 590.1, 43.0, False),
-        (1, 7, 590.1, 29.0, False),
-        (7, 19, 590.1, 19.0, False),
-        (19, 13, 890.0, 55.0, False),
-        (15, 3, 890.0, 5.0, True),
-        (15, 3, 395.0, 5.0, True),
-        (3, 8, 890.0, 20.0, False),
-        (3, 8, 395.0, 20.0, False),
-        (8, 17, 890.0, 25.0, False),
-        (8, 17, 395.0, 25.0, False),
-        (17, 11, 890.0, 42.0, False),
-        (11, 0, 890.0, 40.0, False),
-        (0, 13, 890.0, 5.0, False),
-        (13, 10, 890.0, 10.0, False),
-        (10, 4, 890.0, 25.0, False),
-        (17, 16, 395.5, 10.5, False),
-        (16, 14, 315.5, 26.0, True),
-        (14, 2, 315.5, 98.0, False),
-        (2, 12, 315.5, 6.0, False)
-    ]
-
-    model = Model()
-
-    # create flow variables
-    flow = {}
-    for arc in arcs:
-        flow[arc] = model.addVar("flow_%s_%s" % (nodes[arc[0]][0], nodes[arc[1]][0]),  # names of nodes in arc
-                                 lb=0.0 if arc[4] else None)  # no lower bound if not active
-
-    # pressure difference variables
-    pressurediff = {}
-    for arc in arcs:
-        pressurediff[arc] = model.addVar("pressurediff_%s_%s" % (nodes[arc[0]][0], nodes[arc[1]][0]),
-                                         # names of nodes in arc
-                                         lb=None)
-
-    # supply variables
-    supply = {}
-    for node in nodes:
-        supply[node] = model.addVar("supply_%s" % (node[0]), lb=node[1], ub=node[2], obj=node[5])
-
-    # square pressure variables
-    pressure = {}
-    for node in nodes:
-        pressure[node] = model.addVar("pressure_%s" % (node[0]), lb=node[3] ** 2, ub=node[4] ** 2)
-
-    # node balance constrains, for each node i: outflows - inflows = supply
-    for nid, node in enumerate(nodes):
-        # find arcs that go or end at this node
-        flowbalance = 0
-        for arc in arcs:
-            if arc[0] == nid:  # arc is outgoing
-                flowbalance += flow[arc]
-            elif arc[1] == nid:  # arc is incoming
-                flowbalance -= flow[arc]
-            else:
-                continue
-
-        model.addCons(flowbalance == supply[node], name="flowbalance%s" % node[0])
-
-    # pressure difference constraints: pressurediff[node1 to node2] = pressure[node1] - pressure[node2]
-    for arc in arcs:
-        model.addCons(pressurediff[arc] == pressure[nodes[arc[0]]] - pressure[nodes[arc[1]]],
-                      "pressurediffcons_%s_%s" % (nodes[arc[0]][0], nodes[arc[1]][0]))
-
-    # pressure loss constraints:
-    # active arc: flow[arc]^2 + coef * pressurediff[arc] <= 0.0
-    # regular pipes: flow[arc] * abs(flow[arc]) - coef * pressurediff[arc] == 0.0
-    # coef = 96.074830e-15*diameter(i)^5/(lambda*compressibility*temperatur*length(i)*density)
-    # lambda = (2*log10(3.7*diameter(i)/rugosity))^(-2)
-    from math import log10
-    for arc in arcs:
-        coef = 96.074830e-15 * arc[2] ** 5 * (2.0 * log10(3.7 * arc[2] / RUGOSITY)) ** 2 / COMPRESSIBILITY / GASTEMP / \
-               arc[3] / DENSITY
-        if arc[4]:  # active
-            model.addCons(flow[arc] ** 2 + coef * pressurediff[arc] <= 0.0,
-                          "pressureloss_%s_%s" % (nodes[arc[0]][0], nodes[arc[1]][0]))
-        else:
-            model.addCons(flow[arc] * abs(flow[arc]) - coef * pressurediff[arc] == 0.0,
-                          "pressureloss_%s_%s" % (nodes[arc[0]][0], nodes[arc[1]][0]))
-
-    return model
-
-def test_data_writing(model, model_name, max_number_of_data_records=10):
-    test_logging.debug(f"test: {model_name}")
-    inputs = locals()
-    test_logging.debug(f"test: optimal_cut_inputs {inputs}")
-    sepa = OptimalCut(write_mip_and_cut=True, file_name_base=f"OptimalCutData_{model_name}", max_number_of_data_records=max_number_of_data_records, cgp_kwds=None, paths={"mip_and_cut_write_path":"./src/Experiments/Test/DataCollectionTest", "metadata_write_path":"./src/Experiments/Test/DataCollectionTest/TestMetadata" })
-    model.includeSepa(sepa, "optimalCut", "gmic_equiv_test", priority=1000, freq=1)
-    model.readParams("./src/Experiments/paramFiles/scip_experimental_settings.set")
-    model.optimize()
-    model.printStatistics()
-
-
-
-# test_data_writing(random_mip_1(False, small=True), "random_mip_1", 15)
-
-
-def test_data_writing_from_event_hdlr(problem_path):
-    from pyscipopt import Model
-    from parametricCutGen.scip_data_collection_events import GapData
-    model = Model()
-    model.readProblem(problem_path)
-    model.setHeuristics(SCIP_PARAMSETTING.OFF)
-    #model.setPresolve(SCIP_PARAMSETTING.OFF)
-    sepa = OptimalCut()
-    model.includeSepa(sepa, "optimalCut", "gmic_equiv_test", priority=1000, freq=10)
-    model.readParams("./src/Experiments/paramFiles/scip_experimental_settings.set")
-    data_record = GapData(model)
-    model.includeEventhdlr(data_record, "record_gap_data", "Records dual gap data when optimal_cut is called")
-    model.optimize()
-    model.printStatistics()
-
-def test_data_writing_from_event_hdlr_GMI(problem_path):
-    from pyscipopt import Model
-    from parametricCutGen.scip_data_collection_events import GapData, disableCuts, checkCutsAdded
-    model = Model()
-    model.readProblem(problem_path)
-    model.setHeuristics(SCIP_PARAMSETTING.OFF)
-    model.setPresolve(SCIP_PARAMSETTING.OFF)
-    sepa = GMI()
-    model.includeSepa(sepa, "gmi", "gmic_equiv_test", priority=1000, freq=1)
-    model.readParams("./src/Experiments/paramFiles/scip_disable_other_cuts.set") 
-    # model.setParam("limits/nodes", 1)
-    # model.setParam("separating/maxcuts", 1)
-    model.setParam("separating/maxcutsroot", 1)
-#    model.setParam("separating/maxrounds", 0)
-#    model.setParam("separating/maxroundsroot", 0)
-    model.setParam("branching/random/priority", 20000)
-    check_cuts = checkCutsAdded(model)
-    disable = disableCuts(model)
-    model.includeEventhdlr(disable, "disable_other_cuts", "disable other cuts aside from the targeted cut")
-    model.includeEventhdlr(check_cuts, "check_node_mips", "output nodes mips to verify ")
-    model.optimize()
-    model.printStatistics()
-
-#test_data_writing_from_event_hdlr("/home/acadia/Downloads/30_70_45_095_100.mps")
-# test_data_writing_from_event_hdlr_GMI("/home/acadia/Downloads/gen-ip016.mps")
-#test_data_writing_from_event_hdlr("/home/acadia/Downloads/22433.mps")
 
 from pyscipopt import Model, SCIP_EVENTTYPE, SCIP_RESULT, Eventhdlr, SCIP_PARAMSETTING
 
@@ -300,32 +61,289 @@ class checkCutsAdded(Eventhdlr):
     def eventexec(self, event):  
         if self.model.getCurrentNode().getDepth() > 1: # not at the root; we should have (afik) at most 1 cut added to this node
             self.count += 1
-            self.model.writeMIP(f"node_lp_{self.count}.lp")
-        if self.count == 10:
+            if self.count % 50 == 0:
+                test_logging.debug(f"Node depth: {self.model.getCurrentNode().getDepth()}")
+                test_logging.debug(f"Cuts: {self.model.getNCutsApplied()}")
+                test_logging.debug(f"sepa_rounds: {self.model.getNSepaRounds()}")
+                self.model.writeMIP(f"node_lp_{self.count}.lp")
+                test_logging.debug(f"Node type: {self.model.getCurrentNode().getType()}")
+                test_logging.debug(f"Node parent: {self.model.getCurrentNode().getParent().getDepth()}")
+        if self.model.getCurrentNode().getDepth() == 0:
+            test_logging.debug(f"Node depth: {self.model.getCurrentNode().getDepth()}")
+            test_logging.debug(f"Node added conss: {self.model.getCurrentNode().getNAddedConss()}")
+            test_logging.debug(f"Node type: {self.model.getCurrentNode().getType()}")
+        if self.count == 200:
             self.model.interruptSolve()
 
-class disableCuts(Eventhdlr):
+
+class addCutsAtRoot(Eventhdlr):
     def __init__(self, model):
-        self.model = model
+        Eventhdlr.__init__(model)
+        
     def eventinit(self):
-        self.model.catchEvent(SCIP_EVENTTYPE.NODEFOCUSED, self) # the event is called whenever a node is about to be solved
+        self.model.catchEvent(SCIP_EVENTTYPE.FIRSTLPSOLVED, self)
+
+    def eventexit(self):
+        self.model.dropEvent(SCIP_EVENTTYPE.FIRSTLPSOLVED, self)
 
     def eventexec(self, event):
-        if self.model.getCurrentNode().getDepth() > 1: # if we aren't in the root node
-            self.model.setSeparating(SCIP_PARAMSETTING.OFF) # disable separators
+        if not model.isLPSolBasic():
+            print("boo")
         else:
-            self.model.setSeparating(SCIP_PARAMSETTING.DEFAULT)
-            self.model.readParams("src/Experiments/paramFiles/scip_disable_other_cuts.set") # see link
+            if self.model.getCurrentNode().getDepth() == 0:
+                print("whoo")
 
-model = random_mip_1(False) # from https://github.com/scipopt/PySCIPOpt/blob/master/tests/helpers/utils.py
-sepa = GMI() # From the example of seperator; https://pyscipopt.readthedocs.io/en/latest/tutorials/separator.html
-model.includeSepa(sepa, "gmi", "gmi test", priority=1000, freq=0)
-model.readParams("src/Experiments/paramFiles/scip_disable_other_cuts.set") # see link; https://github.com/ComboProblem/parametricCutGeneration/blob/main/src/Experiments/paramFiles/scip_disable_other_cuts.set
-model.setParam("separating/maxcutsroot", 1)
-model.setParam("branching/random/priority", 20000)
-check_cuts = checkCutsAdded(model)
-disable = disableCuts(model)
-model.includeEventhdlr(disable, "disable_other_cuts", "disable other cuts aside from the targeted cut at depths not at the root")
-model.includeEventhdlr(check_cuts, "check_node_mips", "output nodes mips to verify ")
-model.optimize()
+class TestCutsel(Cutsel):
 
+    def cutselselect(self, cuts, forcedcuts, root, maxnselectedcuts):
+        """
+        Selects the 10 cuts with largest efficacy.
+        """
+
+        scip = self.model
+
+        scores = [0] * len(cuts)
+        for i in range(len(scores)):
+            scores[i] = scip.getCutEfficacy(cuts[i])
+
+        rankings = sorted(range(len(cuts)), key=lambda x: scores[x], reverse=True)
+
+        sorted_cuts = [cuts[rank] for rank in rankings]
+        return {'cuts': sorted_cuts, 'nselectedcuts': min(maxnselectedcuts, len(cuts), 1),
+            'result': SCIP_RESULT.SUCCESS}
+
+#class disableCuts(Eventhdlr):
+#    def __init__(self, model):
+#        self.model = model
+#    def eventinit(self):
+#        self.model.catchEvent(SCIP_EVENTTYPE.NODEFOCUSED, self) # the event is called whenever a node is about to be solved
+#
+#    def eventexec(self, event):
+#        if self.model.getCurrentNode().getDepth() > 1: # if we aren't in the root node
+#            self.model.setSeparating(SCIP_PARAMSETTING.OFF) # disable separators
+#        else:
+#            self.model.setSeparating(SCIP_PARAMSETTING.DEFAULT)
+#            self.model.readParams("src/Experiments/paramFiles/scip_disable_other_cuts.set") # see link
+
+
+#model.printStatistics()
+
+
+def add_at_most_k_cuts_to_model(model, cgp, k):
+    """
+    Add the top k scoring cuts to the root based on the inital LP and specificed cut generation problem (as an ).  
+    """
+    
+    result = SCIP_RESULT.DIDNOTRUN
+    if not model.isLPSolBasic():
+        return {"result": result}
+
+    # get LP data
+    cols = model.getLPColsData()
+    rows = model.getLPRowsData()
+
+    # exit if LP is trivial
+    if len(cols) == 0 or len(rows) == 0:
+        return {"result": result}
+
+    result = SCIP_RESULT.DIDNOTFIND
+    cuts_to_add = []
+    # get basis indices
+    basisind = model.getLPBasisInd()
+
+    # For all basic columns (not slacks) belonging to integer variables, try to generate an optimal cut
+    for i in range(len(rows)):
+        tryrow = False
+        c = basisind[i]
+
+        if c >= 0:
+            assert c < len(cols)
+            var = cols[c].getVar()
+
+            if var.vtype() != "CONTINUOUS":
+                primsol = cols[c].getPrimsol()
+                assert model.getSolVal(None, var) == primsol
+
+                if cgp._espilon <= model.frac(primsol) <= 1 - cgp._espilon: # use cgp notion of 0/1
+                    tryrow = True
+
+        # generate the cut!
+        if tryrow:
+            # get the row of B^-1 for this basic integer variable with fractional solution value
+            binvrow = model.getLPBInvRow(i)
+
+            # get the tableau row for this basic integer variable with fractional solution value
+            binvarow = model.getLPBInvARow(i)
+
+            # get current reduced costs for objective evaluation.
+            costs = [model.getColRedCost(j) for j in cols if j not in basisind]
+
+            cgf, cut_score = cgp.solve(binvarow, costs, primsol) # produce an optimal cgf
+            if len(cuts_to_add) < k:
+                cuts_to_add.append((i, cut_score, cgf))
+                cuts_to_add = sorted(cuts_to_add, key=lambda elem : elem[1])
+            elif cuts_to_add[-1][1] < cut_score:
+                cuts_to_add.pop()
+                cuts_to_add.append((i, cut_score, cgf))
+                cuts_to_add = sorted(cuts_to_add, key=lambda elem : elem[1])
+                
+            
+
+            
+    for cut in cuts_to_add:
+        i = cut[0]
+        cgf = cut[2]
+        c = basisind[i]
+        primsol = cols[c].getPrimsol()
+        binvrow = model.getLPBInvRow(i)
+        # get the tableau row for this basic integer variable with fractional solution value
+        binvarow = model.getLPBInvARow(i)
+        cutcoefs, cutrhs = getOptimalCutFromRow(cols, rows, binvrow, binvarow, primsol, cgf)
+        # model.
+
+
+    return {"result": result}
+
+def getOptimalCutFromRow(model, cols, rows, binvrow, binvarow, primsol, pi_p):
+    """ Given the row (binvarow, binvrow) of the tableau, computes optimized cut.
+
+    :param primsol:  is the rhs of the tableau row
+    :param cols:     are the variables
+    :param rows:     are the slack variables
+    :param binvrow:  components of the tableau row associated to the basis inverse
+    :param binvarow: components of the tableau row associated to the basis inverse * A
+    :param 1dPWL:    a minimal function, ab element of PiMin<=k with pi_p(primsol)=1
+
+    The intersection cut is given by
+     sum(pi_p(a_j) x_j, j in J_I) geq 1
+    where J_I are the integer non-basic variables and J_C are the continuous.
+    f_0 is the fractional part of primsol
+    a_j is the j-th coefficient of the row and f_j its fractional part
+    Note: we create -% <= -f_0 !!
+    Note: this formula is valid for a problem of the form Ax = b, x>= 0. Since we do not have
+    such problem structure in general, we have to (implicitly) transform whatever we are given
+    to that form. Specifically, non-basic variables at their lower bound are shifted so that the lower
+    bound is 0 and non-basic at their upper bound are complemented.
+    """
+
+    # initialize
+    cutcoefs = [0] * len(cols)
+    cutrhs = 0
+
+    # Generate cut coefficients for the original variables
+    for c in range(len(cols)):
+        col = cols[c]
+        assert col is not None
+        status = col.getBasisStatus()
+
+        # Get simplex tableau coefficient
+        if status == "lower":
+            # Take coefficient if nonbasic at lower bound
+            rowelem = binvarow[c]
+        elif status == "upper":
+            # Flip coefficient if nonbasic at upper bound: x --> u - x
+            rowelem = -binvarow[c]
+        else:
+            # variable is nonbasic free at zero -> cut coefficient is zero, skip OR
+            # variable is basic, skip
+            assert status == "zero" or status == "basic"
+            continue
+
+        # Integer variables
+        if col.isIntegral():
+            # warning: because of numerics cutelem < 0 is possible (though the fractional part is, mathematically, always positive)
+            # However, when cutelem < 0 it is also very close to 0, enough that isZero(cutelem) is true, so we ignore
+            # the coefficient (see below)
+            cutelem = float(pi_p(fractional(QQ(rowelem)))) #keep types correct: data is always kept as "rational" as interfaces with inexact problems i.e. rational approximations. 
+        else:
+            # Continuous variables
+            # From Matthias, the super additive portion of the function about 0
+            def psi(x):
+                if x < 0:
+                    return pi_p.functions()[-1](x)
+                else:
+                    return pi_p.functions()[0](x)
+            cutelem = float(psi(fractional(QQ(rowelem))))
+        # cut is define when variables are in [0, infty). Translate to general bounds
+        if not model.isZero(cutelem):
+            if col.getBasisStatus() == "upper":
+                cutelem = -cutelem
+                cutrhs += cutelem * col.getUb()
+            else:
+                cutrhs += cutelem * col.getLb()
+            # Add coefficient to cut in dense form
+            cutcoefs[col.getLPPos()] = cutelem
+
+    # Generate cut coefficients for the slack variables; skip basic ones
+    for c in range(len(rows)):
+        row = rows[c]
+        assert row != None
+        status = row.getBasisStatus()
+
+        # free slack variable shouldn't appear
+        assert status != "zero"
+
+        # Get simplex tableau coefficient
+        if status == "lower":
+            # Take coefficient if nonbasic at lower bound
+            rowelem = binvrow[row.getLPPos()]
+            # But if this is a >= or ranged constraint at the lower bound, we have to flip the row element
+            if not model.isInfinity(-row.getLhs()):
+                rowelem = -rowelem
+        elif status == "upper":
+            # Take element if nonbasic at upper bound - see notes at beginning of file: only nonpositive slack variables
+            # can be nonbasic at upper, therefore they should be flipped twice and we can take the element directly.
+            rowelem = binvrow[row.getLPPos()]
+        else:
+            assert status == "basic"
+            continue
+
+        # if row is integral we can strengthen the cut coefficient
+        if row.isIntegral() and not row.isModifiable():
+            # warning: because of numerics cutelem < 0 is possible (though the fractional part is, mathematically, always positive)
+            # However, when cutelem < 0 it is also very close to 0, enough that isZero(cutelem) is true (see later)
+            cutelem = float(pi_p(fractional(QQ(rowelem))))
+        else:
+            # Continuous variables
+            def psi(x):
+                if x < 0:
+                    return pi_p.functions()[-1](x)
+                else:
+                    return pi_p.functions()[0](x)
+            cutelem = float(psi(fractional(QQ(rowelem))))
+
+        # cut is define in original variables, so we replace slack by its definition
+        if not model.isZero(cutelem):
+            # get lhs/rhs
+            rlhs = row.getLhs()
+            rrhs = row.getRhs()
+            assert model.isLE(rlhs, rrhs)
+            assert not model.isInfinity(rlhs) or not model.isInfinity(rrhs)
+
+            # If the slack variable is fixed, we can ignore this cut coefficient
+            if model.isFeasZero(rrhs - rlhs):
+              continue
+
+            # Unflip slack variable and adjust rhs if necessary: row at lower means the slack variable is at its upper bound.
+            # Since model adds +1 slacks, this can only happen when constraints have a finite lhs
+            if row.getBasisStatus() == "lower":
+                assert not model.isInfinity(-rlhs)
+                cutelem = -cutelem
+
+            rowcols = row.getCols()
+            rowvals = row.getVals()
+
+            assert len(rowcols) == len(rowvals)
+
+            # Eliminate slack variable: rowcols is sorted: [columns in LP, columns not in LP]
+            for i in range(row.getNLPNonz()):
+                cutcoefs[rowcols[i].getLPPos()] -= cutelem * rowvals[i]
+
+            act = model.getRowLPActivity(row)
+            rhsslack = rrhs - act
+            if model.isFeasZero(rhsslack):
+                assert row.getBasisStatus() == "upper" # cutelem != 0 and row active at upper bound -> slack at lower, row at upper
+                cutrhs -= cutelem * (rrhs - row.getConstant())
+            else:
+                assert model.isFeasZero(act - rlhs)
+                cutrhs -= cutelem * (rlhs - row.getConstant())
