@@ -5,7 +5,7 @@ import logging
 data_collection_logger = logging.getLogger(__name__)
 data_collection_logger.setLevel(logging.DEBUG)
 
-def record_data(model: Model, snaphot_frequency=10000,  write_path=""):
+def record_data(model: Model):
     """
     Attaches an event handler to a given SCIP model that collects primal and dual solutions,
     along with the solving time when they were found.
@@ -28,24 +28,6 @@ def record_data(model: Model, snaphot_frequency=10000,  write_path=""):
             
             if event.getType() == SCIP_EVENTTYPE.DUALBOUNDIMPROVED:
                 self.model.data["dual_log"].append([self.model.getSolvingTime(), self.model.getDualbound()])
-
-    class SnapShothdlr(Eventhdlr):
-        def __init__(self, snaphot_frequency, write_path):
-            self.snaphot_frequency = snaphot_frequency
-            self.write_path = write_path
-            self.count = 0
-        def eventinit(self):
-            self.model.catchEvent(SCIP_EVENTTYPE.LPSOLVED, self)
-
-        def eventexec(self, event):
-            if self.count % self.snaphot_frequency == 0:
-                self.model.writeMIP(os.path.join(self.write_path, f"node_lp_{self.count}.lp"))
-                self.model.data["snaphot_count"].append(self.count)
-                self.model.data["snaphot_n_cuts"].append(self.model.getNCutsApplied())
-                self.model.data["snaphot_node_depth"].append(self.model.getCurrentNode().getDepth())
-            self.count += 1
-            
-
              
 
     if not hasattr(model, "data") or model.data==None:
@@ -54,14 +36,10 @@ def record_data(model: Model, snaphot_frequency=10000,  write_path=""):
     model.data.update({
             'primal_log': [],
             'dual_log': [],
-            'snaphot_count': [],
-            'snaphot_node_depth': [],
-            'snaphot_n_cuts': []
+            'cgf_log': [],
             })
 
     gap_hdlr = GapEventhdlr()
-    snapshot_hdlr = SnapShothdlr(snaphot_frequency=snaphot_frequency, write_path=write_path)
     model.includeEventhdlr(gap_hdlr, "gapEventHandler", "Event handler which collects primal and dual solution evolution")
-    model.includeEventhdlr(snapshot_hdlr, "snapShothdlr", "Event handler which takes LP snapshots and verifies experimental paramteters")
     return model
 

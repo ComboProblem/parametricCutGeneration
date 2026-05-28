@@ -361,10 +361,7 @@ class cutGenerationProblem:
         sparse_bkpt.sort()
                 
         self._cut_score.set_f_index(f_index)
-        # for numerical reasons, round to 
-        round_for_solver = lambda x : QQ(ceil(x/self._espilon)*self._espilon)
-        cut_generation_problem_logger.debug(f"rounding_for_solver= {[round_for_solver(x) for x in sparse_bkpt]}")
-        value_polyhedron = value_nnc_polyhedron([round_for_solver(x) for x in sparse_bkpt], f_index, backend=self._backend)
+        value_polyhedron = value_nnc_polyhedron(sparse_bkpt, f_index, backend=self._backend)
         cut_generation_problem_logger.debug(f"Dim of value polyhedron :{value_polyhedron.upstairs().ambient_dim()}")
         point = list(value_polyhedron.find_point())
         # initialize a feasible point for the cut scoring function to remember.
@@ -423,7 +420,7 @@ class cutGenerationProblem:
             log_problem_result(sparse_bkpt, [0, 1], binvarow, binvc, f)
             sage_cut = [pi_p(fractional(QQ(bar_a_ij))) for bar_a_ij in binvarow]
             sage_mip_obj =  [QQ(bar_cj) for bar_cj in binvc]
-            # lord in heaven and the goddess below forgive me becuase i've written some fuckin' aweful code.
+            # lord in heaven and the goddess below forgive me because i've written some fuckin' awful code.
             score = float(self._cut_score._cut_score.cut_score(sage_cut, sage_mip_obj))
             if self._prove_seperator:
                 # we always have a separator here.
@@ -435,6 +432,7 @@ class cutGenerationProblem:
         sparse_bkpt = [QQ(bi) for bi in sparse_bkpt]
         f_index = sparse_bkpt.index(frac_f)
         self._cut_score.set_f_index(f_index)
+        value_polyhedron = value_nnc_polyhedron_value_cords(sparse_bkpt, f_index, backend=self._backend)
         cut_generation_problem_logger.debug(f"Dim of value polyhedron : {value_polyhedron.upstairs().ambient_dim()}")
         linear_constraints, x =  self._solver.write_linear_constraints_from_bsa(value_polyhedron)
         if self._cut_score._cut_score.is_linear():

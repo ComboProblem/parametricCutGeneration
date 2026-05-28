@@ -13,7 +13,6 @@ shell_paths = { "experiment_trial_programs_path":os.getenv("EXPERIMENT_TRIAL_PRO
 
 paths = validate_paths(shell_paths, trial_logger)
 
-
 def run_trial_node_evolution(paths):
     model = Model()
     cgp_experiment_kwrds = json.loads(os.path.join(paths["experiment_trial_programs_path"], "experiment_parameters.json")
@@ -28,8 +27,7 @@ def run_trial_node_evolution(paths):
     model.setParam("separating/maxroundsroot", cgp_experiment_kwrds["max_number_of_cuts"])
     model.setParam("limits/nodes", 10000000)
     model = record_data(model, write_path)
-    record_data = recordData(model, "optimal_cut_exp")
-    model.includeEventhdlr(data_record, "record_gap_data", "Records dual gap data when optimal_cut_exp is called")
+    record_data = record_data(model) 
     model.readProblem(paths["model_file"])
     model.optimize()
-    data_record.write_data(paths["data_target_path"])
+    model.data

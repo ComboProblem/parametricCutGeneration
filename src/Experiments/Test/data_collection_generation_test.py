@@ -1,5 +1,5 @@
 # from parametricCutGen.scip_data_collection_events import CutGapDataRecording
-from parametricCutGen.optimal_cut_generation import OptimalCut, GMI
+from parametricCutGen.optimal_cut_generation import OptimalCut
 from parametricCutGen.logging_utils import * # cgp_written_log is here
 from parametricCutGen.scip_data_collection_events import record_data
 from pyscipopt import Model
