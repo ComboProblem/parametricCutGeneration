@@ -435,10 +435,6 @@ class cutGenerationProblem:
         sparse_bkpt = [QQ(bi) for bi in sparse_bkpt]
         f_index = sparse_bkpt.index(frac_f)
         self._cut_score.set_f_index(f_index)
-        cut_generation_problem_logger.debug(f"sparse_bkpt={sparse_bkpt}")
-        round_for_solver = lambda x : QQ(ceil(x/QQ(self._espilon))*self._espilon)
-        cut_generation_problem_logger.debug(f"rounding_for_solver= {[round_for_solver(x) for x in sparse_bkpt]}")
-        value_polyhedron = value_nnc_polyhedron_value_cords([round_for_solver(x) for x in sparse_bkpt], f_index, backend=self._backend)
         cut_generation_problem_logger.debug(f"Dim of value polyhedron : {value_polyhedron.upstairs().ambient_dim()}")
         linear_constraints, x =  self._solver.write_linear_constraints_from_bsa(value_polyhedron)
         if self._cut_score._cut_score.is_linear():

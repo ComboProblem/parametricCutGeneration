@@ -13,15 +13,15 @@ test_logging = logging.getLogger(__name__)
 test_logging.setLevel(logging.DEBUG)
 
 
-model = Model() # from https://github.com/scipopt/PySCIPOpt/blob/master/tests/helpers/utils.py\
-model.readProblem(filename="/home/acadia/Downloads/gen-ip016.mps")
-#logging.disable()
-sepa = OptimalCut(cgp_kwds={"algorithm" : "value_poly_lp", "max_num_of_bkpts": 2}) # From the example of seperator; https://pyscipopt.readthedocs.io/en/latest/tutorials/separator.html]
-#sepa = GMI()
-#model.readParams("src/Experiments/paramFiles/scip_disable_other_cuts.set") # see link; https://github.com/ComboProblem/parametricCutGeneration/blob/main/src/Experiments/paramFiles/scip_disable_other_cuts.set
+model = Model()
+model.readProblem(filename="/home/acadia/Downloads/30_70_45_095_100.mps")
 model.setSeparating(SCIP_PARAMSETTING.OFF)
+#logging.disable()
+sepa = OptimalCut(cgp_kwds={"algorithm" : "value_poly_lp", "max_num_of_bkpts": 16})
 model.includeSepa(sepa, "optimal_cut", "optimal_cut test", priority=10000, freq=0)
+#sepa = GMI()
 #model.includeSepa(sepa, "gmi", "gmi test", priority=10000, freq=0)
+#model.readParams("src/Experiments/paramFiles/scip_disable_other_cuts.set") # see link; https://github.com/ComboProblem/parametricCutGeneration/blob/main/src/Experiments/paramFiles/scip_disable_other_cuts.set
 model.setHeuristics(SCIP_PARAMSETTING.OFF)
 model.setPresolve(SCIP_PARAMSETTING.OFF)
 #model.disablePropagation()
@@ -44,8 +44,8 @@ model=record_data(model, 10) # redirecting write pathissue?
 # model.includeEventhdlr(disable, "disable_other_cuts", "disable other cuts aside from the targeted cut at depths not at the root")
 #model.includeEventhdlr(add_cut_at_root, "add cuts", "cuts_added")
 model.optimize()
-model.printStatistics()
-print(model.data)
+#model.printStatistics()
+#print(model.data)
 
 
 from pyscipopt import Model, SCIP_EVENTTYPE, SCIP_RESULT, Eventhdlr, SCIP_PARAMSETTING

@@ -70,12 +70,22 @@ class OptimalCut(Sepa):
         """
 
         # initialize
-        cutcoefs = [0] * len(cols)
-        cutrhs = 0
+        cutcoefs_fun = [0] * len(cols)
+        cutrhs_fun = 0
 
-        # get model
-        model = self.model
-
+        # get scip
+        scip = self.model
+        
+        f = fractional(QQ(primsol))
+        def psi(x):
+            if x < 0:
+                slope = pi_p.functions()[-1]._slope
+                neg_part = FastLinearFunction(slope, 0)
+                return neg_part(x)
+            else:
+                return pi_p.functions()[0](x)
+        # rhs of the cut is the fractional part of the LP solution for the basic variable
+        cutrhs_fun = -f
         # Generate cut coefficients for the original variables
         for c in range(len(cols)):
             col = cols[c]
@@ -97,28 +107,21 @@ class OptimalCut(Sepa):
 
             # Integer variables
             if col.isIntegral():
-                # warning: because of numerics cutelem < 0 is possible (though the fractional part is, mathematically, always positive)
-                # However, when cutelem < 0 it is also very close to 0, enough that isZero(cutelem) is true, so we ignore
-                # the coefficient (see below)
-                cutelem = float(pi_p(fractional(QQ(rowelem)))) #keep types correct
+                cutelem_fun = fractional(QQ(rowelem))
+                cutelem_fun = float(-1*f*pi_p(cutelem_fun))
             else:
                 # Continuous variables
-                # From Matthias, the super additive portion of the function about 0
-                def psi(x):
-                    if x < 0:
-                        return pi_p.functions()[-1](x)
-                    else:
-                        return pi_p.functions()[0](x)
-                cutelem = float(psi(fractional(QQ(rowelem))))
+                cutelem_fun = float(-1*f*psi(QQ(rowelem)))
+
             # cut is define when variables are in [0, infty). Translate to general bounds
-            if not model.isZero(cutelem):
+            if not scip.isZero(cutelem_fun):
                 if col.getBasisStatus() == "upper":
-                    cutelem = -cutelem
-                    cutrhs += cutelem * col.getUb()
+                    cutelem_fun = -cutelem_fun
+                    cutrhs_fun += cutelem_fun * col.getUb()
                 else:
-                    cutrhs += cutelem * col.getLb()
+                    cutrhs_fun += cutelem_fun * col.getLb()
                 # Add coefficient to cut in dense form
-                cutcoefs[col.getLPPos()] = cutelem
+                cutcoefs_fun[col.getLPPos()] = cutelem_fun
 
         # Generate cut coefficients for the slack variables; skip basic ones
         for c in range(len(rows)):
@@ -134,7 +137,7 @@ class OptimalCut(Sepa):
                 # Take coefficient if nonbasic at lower bound
                 rowelem = binvrow[row.getLPPos()]
                 # But if this is a >= or ranged constraint at the lower bound, we have to flip the row element
-                if not model.isInfinity(-row.getLhs()):
+                if not scip.isInfinity(-row.getLhs()):
                     rowelem = -rowelem
             elif status == "upper":
                 # Take element if nonbasic at upper bound - see notes at beginning of file: only nonpositive slack variables
@@ -148,33 +151,29 @@ class OptimalCut(Sepa):
             if row.isIntegral() and not row.isModifiable():
                 # warning: because of numerics cutelem < 0 is possible (though the fractional part is, mathematically, always positive)
                 # However, when cutelem < 0 it is also very close to 0, enough that isZero(cutelem) is true (see later)
-                cutelem = float(pi_p(fractional(QQ(rowelem))))
+                cutelem_fun = fractional(QQ(rowelem))
+                cutelem_fun = float(-1*f*pi_p(cutelem_fun))
             else:
                 # Continuous variables
-                def psi(x):
-                    if x < 0:
-                        return pi_p.functions()[-1](x)
-                    else:
-                        return pi_p.functions()[0](x)
-                cutelem = float(psi(fractional(QQ(rowelem))))
+                cutelem_fun = float(-1*f*psi(QQ(rowelem)))
 
             # cut is define in original variables, so we replace slack by its definition
-            if not model.isZero(cutelem):
+            if not scip.isZero(cutelem_fun):
                 # get lhs/rhs
                 rlhs = row.getLhs()
                 rrhs = row.getRhs()
-                assert model.isLE(rlhs, rrhs)
-                assert not model.isInfinity(rlhs) or not model.isInfinity(rrhs)
+                assert scip.isLE(rlhs, rrhs)
+                assert not scip.isInfinity(rlhs) or not scip.isInfinity(rrhs)
 
                 # If the slack variable is fixed, we can ignore this cut coefficient
-                if model.isFeasZero(rrhs - rlhs):
+                if scip.isFeasZero(rrhs - rlhs):
                   continue
 
                 # Unflip slack variable and adjust rhs if necessary: row at lower means the slack variable is at its upper bound.
-                # Since model adds +1 slacks, this can only happen when constraints have a finite lhs
+                # Since SCIP adds +1 slacks, this can only happen when constraints have a finite lhs
                 if row.getBasisStatus() == "lower":
-                    assert not model.isInfinity(-rlhs)
-                    cutelem = -cutelem
+                    assert not scip.isInfinity(-rlhs)
+                    cutelem_fun = -cutelem_fun
 
                 rowcols = row.getCols()
                 rowvals = row.getVals()
@@ -183,20 +182,18 @@ class OptimalCut(Sepa):
 
                 # Eliminate slack variable: rowcols is sorted: [columns in LP, columns not in LP]
                 for i in range(row.getNLPNonz()):
-                    cutcoefs[rowcols[i].getLPPos()] -= cutelem * rowvals[i]
+                    cutcoefs_fun[rowcols[i].getLPPos()] -= cutelem_fun * rowvals[i]
 
-                act = model.getRowLPActivity(row)
+                act = scip.getRowLPActivity(row)
                 rhsslack = rrhs - act
-                if model.isFeasZero(rhsslack):
+                if scip.isFeasZero(rhsslack):
                     assert row.getBasisStatus() == "upper" # cutelem != 0 and row active at upper bound -> slack at lower, row at upper
-                    cutrhs -= cutelem * (rrhs - row.getConstant())
+                    cutrhs_fun -= cutelem_fun * (rrhs - row.getConstant())
                 else:
-                    assert model.isFeasZero(act - rlhs)
-                    cutrhs -= cutelem * (rlhs - row.getConstant())
-        optimal_cut_logger.debug(f"f0={primsol}")
-        optimal_cut_logger.debug(f"cutcoefs={cutcoefs}")
-        optimal_cut_logger.debug(f"cutrhs={cutrhs}")
-        return cutcoefs, cutrhs
+                    assert scip.isFeasZero(act - rlhs)
+                    cutrhs_fun -= cutelem_fun * (rlhs - row.getConstant())
+
+        return cutcoefs_fun, cutrhs_fun
 
     def sepaexeclp(self):
         result = SCIP_RESULT.DIDNOTRUN
@@ -247,7 +244,7 @@ class OptimalCut(Sepa):
                 costs = [model.getColRedCost(j) for j in cols if j not in basisind]
 
                 cgf, cut_score = self.cgp.solve(binvarow, costs, primsol) # produce an optimal cgf
-
+                optimal_cut_logger.debug(f"b={cgf.end_points()}\nv={cgf.values_at_end_points()}")
                 cutcoefs, cutrhs = self.getOptimalCutFromRow(cols, rows, binvrow, binvarow, primsol, cgf)
 
                 cut = model.createEmptyRowSepa(self, "optimal_cut%d_x%d"%(self.ncuts,c if c >= 0 else -c-1), lhs = None, rhs = cutrhs)
@@ -314,16 +311,27 @@ class GMI(Sepa):
         cutcoefs = [0] * len(cols)
         cutrhs = 0
 
+        cutcoefs_fun = [0] * len(cols)
+        cutrhs_fun = 0
+
         # get scip
         scip = self.model
 
         # Compute cut fractionality f0 and f0/(1-f0)
         f0 = scip.frac(primsol)
+        f = fractional(QQ(primsol))
         ratiof0compl = f0/(1-f0)
-
+        pi_p = gmic(f)
+        def psi(x):
+            if x < 0:
+                slope = pi_p.functions()[-1]._slope
+                neg_part = FastLinearFunction(slope, 0)
+                return neg_part(x)
+            else:
+                return pi_p.functions()[0](x)
         # rhs of the cut is the fractional part of the LP solution for the basic variable
         cutrhs = -f0
-
+        cutrhs_fun = -f
         # Generate cut coefficients for the original variables
         for c in range(len(cols)):
             col = cols[c]
@@ -349,15 +357,18 @@ class GMI(Sepa):
                 # However, when cutelem < 0 it is also very close to 0, enough that isZero(cutelem) is true, so we ignore
                 # the coefficient (see below)
                 cutelem = scip.frac(rowelem)
-
+                cutelem_fun = fractional(QQ(rowelem))
+                cutelem_fun = float(-1*f*pi_p(cutelem_fun))
                 if cutelem > f0:
                     # sum((1-f_j)*f_0/(1 - f_0) x_j, j in J_I s.t. f_j  > f_0) +
                     cutelem = -((1.0 - cutelem) * ratiof0compl)
                 else:
                     #  sum(f_j x_j                  , j in J_I s.t. f_j <= f_0) +
                     cutelem = -cutelem
+
             else:
                 # Continuous variables
+                cutelem_fun = float(-1*f*psi(QQ(rowelem)))
                 if rowelem < 0.0:
                     # -sum(a_j*f_0/(1-f_0) x_j      , j in J_C s.t. a_j  <   0) >= f_0.
                     cutelem = rowelem * ratiof0compl
@@ -369,11 +380,15 @@ class GMI(Sepa):
             if not scip.isZero(cutelem):
                 if col.getBasisStatus() == "upper":
                     cutelem = -cutelem
+                    cutelem_fun = -cutelem_fun
                     cutrhs += cutelem * col.getUb()
+                    cutrhs_fun += cutelem_fun * col.getUb()
                 else:
                     cutrhs += cutelem * col.getLb()
+                    cutrhs_fun += cutelem_fun * col.getLb()
                 # Add coefficient to cut in dense form
                 cutcoefs[col.getLPPos()] = cutelem
+                cutcoefs_fun[col.getLPPos()] = cutelem_fun
 
         # Generate cut coefficients for the slack variables; skip basic ones
         for c in range(len(rows)):
@@ -404,7 +419,8 @@ class GMI(Sepa):
                 # warning: because of numerics cutelem < 0 is possible (though the fractional part is, mathematically, always positive)
                 # However, when cutelem < 0 it is also very close to 0, enough that isZero(cutelem) is true (see later)
                 cutelem = scip.frac(rowelem)
-
+                cutelem_fun = fractional(QQ(rowelem))
+                cutelem_fun = float(-1*f*pi_p(cutelem_fun))
                 if cutelem > f0:
                     #  sum((1-f_j)*f_0/(1 - f_0) x_j, j in J_I s.t. f_j  > f_0) +
                     cutelem = -((1.0 - cutelem) * ratiof0compl)
@@ -413,13 +429,15 @@ class GMI(Sepa):
                     cutelem = -cutelem
             else:
                 # Continuous variables
+                cutelem_fun = float(-1*f*psi(QQ(rowelem)))
                 if rowelem < 0.0:
                     # -sum(a_j*f_0/(1-f_0) x_j      , j in J_C s.t. a_j  <   0) >= f_0.
                     cutelem = rowelem * ratiof0compl
                 else:
                     #  sum(a_j x_j,                 , j in J_C s.t. a_j >=   0) -
                     cutelem = -rowelem
-
+            if abs(cutelem_fun - cutelem) > .000001:
+                optimal_cut_logger.debug(f"cut strengthening \n ratio={cutelem_fun/cutelem}")
             # cut is define in original variables, so we replace slack by its definition
             if not scip.isZero(cutelem):
                 # get lhs/rhs
@@ -446,17 +464,20 @@ class GMI(Sepa):
                 # Eliminate slack variable: rowcols is sorted: [columns in LP, columns not in LP]
                 for i in range(row.getNLPNonz()):
                     cutcoefs[rowcols[i].getLPPos()] -= cutelem * rowvals[i]
+                    cutcoefs_fun[rowcols[i].getLPPos()] -= cutelem_fun * rowvals[i]
 
                 act = scip.getRowLPActivity(row)
                 rhsslack = rrhs - act
                 if scip.isFeasZero(rhsslack):
                     assert row.getBasisStatus() == "upper" # cutelem != 0 and row active at upper bound -> slack at lower, row at upper
                     cutrhs -= cutelem * (rrhs - row.getConstant())
+                    cutrhs_fun -= cutelem_fun * (rrhs - row.getConstant())
                 else:
                     assert scip.isFeasZero(act - rlhs)
                     cutrhs -= cutelem * (rlhs - row.getConstant())
+                    cutrhs_fun -= cutelem_fun * (rlhs - row.getConstant())
         optimal_cut_logger.debug(f"f0={f0}")
-        optimal_cut_logger.debug(f"cutcoefs={cutcoefs}")
+        optimal_cut_logger.debug(f"cutcoefs={cutcoefs} \n cutcoefs_fun={cutcoefs_fun}")
         optimal_cut_logger.debug(f"cutrhs={cutrhs}")
         return cutcoefs, cutrhs
 
