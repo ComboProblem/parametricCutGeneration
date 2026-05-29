@@ -17,7 +17,7 @@ def run_trial_node_evolution(paths):
     model = Model()
     cgp_experiment_kwrds = json.loads(os.path.join(paths["experiment_trial_programs_path"], "experiment_parameters.json")
     write_path = paths["metadata_write_path"]
-    seapa = OptimalCut(cgp_kwds=cgp_experiment_kwrds[])
+    seapa = OptimalCut(cgp_kwds=cgp_experiment_kwrds["cpg_kwds"])
     model.setSeparating(SCIP_PARAMSETTING.OFF)
     model.setHeuristics(SCIP_PARAMSETTING.OFF)
     model.setPresolve(SCIP_PARAMSETTING.OFF)
@@ -29,5 +29,8 @@ def run_trial_node_evolution(paths):
     model = record_data(model, write_path)
     record_data = record_data(model) 
     model.readProblem(paths["model_file"])
-    model.optimize()
+    try:
+        model.optimize()
+    except Exception as e:
+        
     model.data

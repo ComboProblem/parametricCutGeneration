@@ -45,29 +45,6 @@ def setup_experiment_paths(paths, experiment):
     paths["exp_data"] = exp_data_dir
     return paths
 
-# potential to extend, for now we'll use a universal number_of_cuts or calls to the paramaterized_problem_solver
-def define_trial_scip_settings(paths, experiment):
-    raise NotImplementedError
-    with open(os.join(paths["trial_programs"], "scip_experiment_parmaters.set")) as scip_exp_param_file:
-        # maximal number of separation rounds per node (-1: unlimited)
-        # [type: int, advanced: FALSE, range: [-1,2147483647], default: -1]
-        scip_exp_param_file.write(f"separating/maxrounds = {experiment[""]}\n")
-        # maximal number of separation rounds in the root node (-1: unlimited)
-        # [type: int, advanced: FALSE, range: [-1,2147483647], default: -1]
-        scip_exp_param_file.write(f"separating/maxroundsroot = {experiment[""]}\n")
-        # maximal number of separation rounds in the root node of a subsequent run (-1: unlimited)
-        # [type: int, advanced: TRUE, range: [-1,2147483647], default: -1]
-        scip_exp_param_file.write(f"separating/maxroundsrootsubrun = {experiment[""]}\n")
-        # maximal additional number of separation rounds in subsequent price-and-cut loops (-1: no additional restriction)
-        # [type: int, advanced: TRUE, range: [-1,2147483647], default: 1]
-        scip_exp_param_file.write(f"separating/maxaddrounds = {experiment[""]}\n")
-        # maximal number of consecutive separation rounds without objective or integrality improvement in local nodes (-1: no additional restriction)
-        # [type: int, advanced: FALSE, range: [-1,2147483647], default: 1]
-        scip_exp_param_file.write(f"separating/maxstallrounds = {experiment[""]}\n")
-        # maximal number of consecutive separation rounds without objective or integrality improvement in the root node (-1: no additional restriction)
-        # [type: int, advanced: FALSE, range: [-1,2147483647], default: 10]
-        scip_exp_param_file.write(f"separating/maxstallroundsroot = {experiment[""]}\n")
-
 def write_trials_for_experiments(paths, experiment):
     """
     Writes all experimental trials programs to trial directory and defines a program to run all trial programs.

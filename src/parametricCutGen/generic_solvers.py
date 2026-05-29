@@ -209,18 +209,30 @@ class cvxpyCutGenProblemSolverInterface(abstractCutGenProblemSolverInterface):
         for polynomial in bsa.eq_poly():
             if polynomial.degree() != 1:
                 raise ValueError(f"Constraint {polynomial} == 0 is not linear.")
-            linear_coeffs = np.array([polynomial.coefficient(i) for i in polynomial.parent().gens()])
-            cons.append(linear_coeffs @ x == float(-1*polynomial.constant_coefficient()))
+            coeffs = [polynomial.coefficient(i) for i in polynomial.parent().gens()]+[polynomial.constant_coefficient()]
+            linear_coeffs = np.array([int(x) for x in coeffs])
+            normalization_term = max([abs(x) for x in linear_coeffs])
+            if normalization_term != 0:
+                linear_coeffs = linear_coeffs/normalization_term
+            cons.append(linear_coeffs[:-1] @ x == float(-1*linear_coeffs[-1]))
         for polynomial in bsa.lt_poly():
             if polynomial.degree() != 1:
                 raise ValueError(f"Constraint {polynomial} < 0 is not linear.")
-            linear_coeffs = np.array([polynomial.coefficient(i) for i in polynomial.parent().gens()])
-            cons.append(linear_coeffs @ x <= float(-1*polynomial.constant_coefficient() - epsilon))
+            coeffs = [polynomial.coefficient(i) for i in polynomial.parent().gens()]+[polynomial.constant_coefficient()]
+            linear_coeffs = np.array([int(x) for x in coeffs])
+            normalization_term = max([abs(x) for x in linear_coeffs])
+            if normalization_term != 0:
+                linear_coeffs = linear_coeffs/normalization_term
+            cons.append(linear_coeffs[:-1] @ x <= float(-1*linear_coeffs[-1]) - epsilon)
         for polynomial in bsa.le_poly():
             if polynomial.degree() != 1:
                 raise ValueError(f"Constraint {polynomial} <= 0 is not linear.")
-            linear_coeffs = np.array([polynomial.coefficient(i) for i in polynomial.parent().gens()])
-            cons.append(linear_coeffs @ x <= float(-1*polynomial.constant_coefficient()))
+            coeffs = [polynomial.coefficient(i) for i in polynomial.parent().gens()]+[polynomial.constant_coefficient()]
+            linear_coeffs = np.array([int(x) for x in coeffs])
+            normalization_term = max([abs(x) for x in linear_coeffs])
+            if normalization_term != 0:
+                linear_coeffs = linear_coeffs/normalization_term
+            cons.append(linear_coeffs[:-1] @ x <= float(-1*linear_coeffs[-1]))
         if len(cons) != 0:
             return cons, x
         else:
@@ -241,10 +253,11 @@ class cvxpyCutGenProblemSolverInterface(abstractCutGenProblemSolverInterface):
 
         Should return optimal objective value, optimal objective solution, solver success, and solver_output.
         """
-        
+        # cylp solver
         x = solver_options['x']# intnded to be form the constraints x
         prob = Problem(cut_score_objective, cell_constraints)
-        result = prob.solve(solver="OSQP")        
+        #result = prob.solve() # default cvxpy solver
+        result = prob.solve(solver="SCIP") # try highs first, then go though scip.
         return prob.value, x.value, None, prob
 
     @staticmethod
