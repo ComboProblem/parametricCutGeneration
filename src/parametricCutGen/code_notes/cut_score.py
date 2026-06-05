@@ -120,7 +120,6 @@ class cutScore:
         self._sage_to_solver_type = None
         self._timer = None
         self._feasible_point = None
-        self._rel_tol = 10**-9
         self._prev_result = None
         self._objective_sense = objective_sense
         if self._objective_sense not in ["maximize", "minimize"]:
@@ -163,16 +162,13 @@ class cutScore:
             sage_result = -1*sage_result
         self._sage_cut = sage_cut
         self._sage_mip_obj = sage_mip_obj
-        if norm(point-prev_point, ord=inf) < self._rel_tol:
-            cut_score_logger.debug(f"cutScore.__call__: Relative distance between successive paramaterized solutions is less than {self._rel_tol}. Stopping non-linear solver.")
-            self.set_prev_result(sage_result)
-            raise SolverRelTolReached(f"cutScore.__call__: Relative distance between successive solutions is less than {self._rel_tol}. Stopping non-linear solver.")
-        else:
-            self.set_prev_result(sage_result)
+        self.set_prev_result(sage_result)
         if self._timer is not None:
             if self._timer.solver_time_out():
                 raise SolverTimeOut
         return self.get_sage_to_solver_type()(sage_result)
+
+
 
     @staticmethod
     def grad(self):
@@ -392,19 +388,13 @@ class cutScore:
 
 class Parallelism(abstractCutScore):
     """
-    Normalized cut parallelism score.
+    Cut parallelism score.
     """
     def cut_score(cut, mip_obj):
         obj_norm = vector(mip_obj).norm()
         cut_norm = vector(cut).norm()
         dot_product = vector(mip_obj).row()*vector(cut).column()
         return (dot_product[0]/(obj_norm*cut_norm))[0]
-    
-    def is_linear():
-        r"""
-        Returns True if the cut score (when defined on the parameterized cut space) is linear.
-        """
-        return False
 
 
 class SteepestDirection(abstractCutScore):
@@ -414,65 +404,6 @@ class SteepestDirection(abstractCutScore):
     def cut_score(cut, mip_obj):
         dot_product = vector(mip_obj).row()*vector(cut).column()
         return dot_product[0][0]
-
-    def is_linear():
-        r"""
-        Returns True if the cut score (when defined on the parameterized cut space) is linear.
-        """
-        return True
-    
-    def wrap_cut_score_to_solver_linear_objective(solver, **kwds):
-        r"""
-        Returns a valid input linear function for solver to use in an LP problem.
-        """
-        if issubclass(solver, cvxpyCutGenProblemSolverInterface):
-            from cvxpy import Minimize, Maximize
-            x = kwds['x']
-            bkpt = kwds['bkpt']
-            f_index = kwds['f_index']
-            mip_obj = kwds['mip_obj']
-            pi = pwl_with_value_parameters_and_bkpts_fixed(bkpt, f_index)
-            cut_score_in_value_params = sum(pi(fractional(QQ(c))) for c in mip_obj)
-            coord_names = ['gamma'+str(i) for i in range(len(bkpt))]
-            param_obj = np.array([float(cut_score_in_value_params.coefficient(cut_score_in_value_params.parent().gens_dict()[name])) for name in coord_names])
-            cut_score_logger.debug(f"Objective inputs... {param_obj, x}")
-            if kwds['objective_sense'] == "maximize": # see note about how solvers are phrased in cut_generation_problem _algorithm_full_space.
-                return Minimize(param_obj @ x)
-            else:
-                return Maximize(param_obj @ x)
-
-class SteepestDirection2(abstractCutScore):
-    """
-    Steepest direction score.
-    """
-    def cut_score(cut, mip_obj):
-        dot_product = 2*vector(mip_obj).row()*vector(cut).column()
-        return dot_product[0][0]
-
-    def is_linear():
-        r"""
-        Returns True if the cut score (when defined on the parameterized cut space) is linear.
-        """
-        return True
-    
-    def wrap_cut_score_to_solver_linear_objective(solver, **kwds):
-        r"""
-        Returns a valid input linear function for solver to use in an LP problem.
-        """
-        if issubclass(solver, cvxpyCutGenProblemSolverInterface):
-            from cvxpy import Minimize, Maximize
-            x = kwds['x']
-            bkpt = kwds['bkpt']
-            f_index = kwds['f_index']
-            mip_obj = kwds['mip_obj']
-            pi = pwl_with_value_parameters_and_bkpts_fixed(bkpt, f_index)
-            cut_score_in_value_params = sum(pi(fractional(QQ(c))) for c in mip_obj)
-            coord_names = ['gamma'+str(i) for i in range(len(bkpt))]
-            param_obj = np.array([cut_score_in_value_params.coefficient(cut_score_in_value_params.parent().gens_dict()[name]) for name in coord_names])
-            if kwds['objective_sense'] == "maximize":
-                return Maximize(2*param_obj @ x)
-            else:
-                return Minimize(2*param_obj @ x)
 
 
 class SCIP_STANDARD(abstractCutScore):

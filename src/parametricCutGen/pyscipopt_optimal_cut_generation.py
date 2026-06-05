@@ -1,6 +1,7 @@
 from cutgeneratingfunctionology.igp import *
 from minimalFunctionCache.utils import minimal_function_cache_info
 from .cut_generation_problem import *
+
 # the rational conversion QQ is imported from cutgeneratingfunctionology.
 #from scipy.optimize import minimize, LinearConstraint, NonlinearConstraint
 from pyscipopt import Model, Sepa, SCIP_RESULT
@@ -215,7 +216,7 @@ class OptimalCut(Sepa):
                     primsol = cols[c].getPrimsol()
                     assert model.getSolVal(None, var) == primsol
 
-                    if .001 <= model.frac(primsol) <= 1 - .001: # use cgp notion of 0/1
+                    if self.cgp._epsilon <= model.frac(primsol) <= 1 - self.cgp._epsilon: # use cgp notion of 0/1
                         tryrow = True
 
             # generate the cut!
@@ -230,7 +231,8 @@ class OptimalCut(Sepa):
                 # get current reduced costs for objective evaluation.
                 costs = [model.getColRedCost(j) for j in cols if j not in basisind]
 #                try:
-                cgf, cut_score = self.cgp.solve(binvarow, costs, primsol) # produce an optimal cgf
+                cgf, cut_score = self.cgp.solve(binvrow, binvarow, primsol, costs, cols, rows, model) # produce an optimal cgf
+              
                 if self.write_cgf_data:
                     if not hasattr(model, "data") or model.data==None:
                         model.data = {}
@@ -269,8 +271,8 @@ class OptimalCut(Sepa):
                        result = SCIP_RESULT.SEPARATED
                 model.releaseRow(cut)
 #                except Exception as e:
-#                    optimal_cut_logger.error(e)
-                    #continue # the problem has failed to solve within parameters; skip the row because we could not find a cgf.
+#                    optimal_cut_logger.error(f"Optimal cut generation failed: Error {e}")
+#                    continue # the problem has failed to solve within parameters; skip the row because we could not find a cgf.
 
 
         return {"result": result}

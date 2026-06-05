@@ -1,3 +1,5 @@
+# exceptitions to communicate between cgp and cut score class. 
+
 class UnsetData(Exception):
     pass
 

@@ -75,29 +75,38 @@ class scipyCutGenProbelmSolverInterface(abstractCutGenProblemSolverInterface):
         for polynomial in bsa.eq_poly():
             if polynomial.degree() != 1:
                 raise ValueError(f"Constraint {polynomial} == 0 is not linear.")
-            linear_coeffs = [polynomial.coefficient(i) for i in polynomial.parent().gens()]
-            A_eq.append(linear_coeffs)
+            coeffs = [polynomial.coefficient(i) for i in polynomial.parent().gens()]+[polynomial.constant_coefficient()]
+            normalization_term = max([abs(int(x)) for x in coeffs])
+            if normalization_term != 0:
+                coeffs = coeffs/normalization_term
             # polys in bsa are written poly op 0
             # rewrite to correct scipy notation.
-            constant = -1*polynomial.constant_coefficient()
-            eq.append(constant)
+            A_eq.append(coeffs[:-1])
+            eq.append( -1*coeffs[-1])
         for polynomial in bsa.lt_poly():
             if polynomial.degree() != 1:
                 raise ValueError(f"Constraint {polynomial} < 0 is not linear.")
-            linear_coeffs = [polynomial.coefficient(i) for i in polynomial.parent().gens()]
-            A_ieq.append(linear_coeffs)
-            # mimic in a non-rigorous way <
-            constant = -1*polynomial.constant_coefficient() - epsilon
+            coeffs = [polynomial.coefficient(i) for i in polynomial.parent().gens()]+[polynomial.constant_coefficient()]
+            normalization_term = max([abs(int(x)) for x in coeffs])
+            if normalization_term != 0:
+                coeffs = coeffs/normalization_term
+            # polys in bsa are written poly op 0
+            # rewrite to correct scipy notation.
+            A_ieq.append(coeffs[:-1])
             lb.append(-np.inf)
-            ub.append(constant)
+            ub.append(-1*coeffs[-1])
         for polynomial in bsa.le_poly():
             if polynomial.degree() != 1:
                 raise ValueError(f"Constraint {polynomial} < 0 is not linear.")
-            linear_coeffs = [polynomial.coefficient(i) for i in polynomial.parent().gens()]
-            A_ieq.append(linear_coeffs)
-            constant = -1*polynomial.constant_coefficient()
+            coeffs = [polynomial.coefficient(i) for i in polynomial.parent().gens()]+[polynomial.constant_coefficient()]
+            normalization_term = max([abs(int(x)) for x in coeffs])
+            if normalization_term != 0:
+                coeffs = coeffs/normalization_term
+            # polys in bsa are written poly op 0
+            # rewrite to correct scipy notation.
+            A_ieq.append(coeffs[:-1])
             lb.append(-np.inf)
-            ub.append(constant)
+            ub.append(-1*coeffs[-1])
         lb = np.array(lb)
         ub = np.array(ub)
         if len(lb) == 0 and len(eq) > 0 :
