@@ -10,7 +10,7 @@ import os
 import time
 
 optimal_cut_logger = logging.getLogger(__name__)
-optimal_cut_logger.setLevel(logging.DEBUG)
+optimal_cut_logger.setLevel(logging.ERROR)
 # Adapted from the example in the docs. https://pymodelopt.readthedocs.io/en/latest/tutorials/separator.html
 
 # Note; pplitepy has numeric issues when converting python ints to c longs. 
@@ -229,48 +229,48 @@ class OptimalCut(Sepa):
 
                 # get current reduced costs for objective evaluation.
                 costs = [model.getColRedCost(j) for j in cols if j not in basisind]
-                try:
-                    cgf, cut_score = self.cgp.solve(binvarow, costs, primsol) # produce an optimal cgf
-                    if self.write_cgf_data:
-                        if not hasattr(model, "data") or model.data==None:
-                            model.data = {}
-                            model.data["cgf_log"] = []
-                        b = cgf.end_points()
-                        v = cgf.values_at_end_points()
-                        model.data["cgf_log"].append(((b,v), cut_score, c))
-                    optimal_cut_logger.debug(f"b={cgf.end_points()}\nv={cgf.values_at_end_points()}")
-                    cutcoefs, cutrhs = self.getOptimalCutFromRow(cols, rows, binvrow, binvarow, primsol, cgf)
+#                try:
+                cgf, cut_score = self.cgp.solve(binvarow, costs, primsol) # produce an optimal cgf
+                if self.write_cgf_data:
+                    if not hasattr(model, "data") or model.data==None:
+                        model.data = {}
+                        model.data["cgf_log"] = []
+                    b = cgf.end_points()
+                    v = cgf.values_at_end_points()
+                    model.data["cgf_log"].append(((b,v), cut_score, c))
+                optimal_cut_logger.debug(f"b={cgf.end_points()}\nv={cgf.values_at_end_points()}")
+                cutcoefs, cutrhs = self.getOptimalCutFromRow(cols, rows, binvrow, binvarow, primsol, cgf)
 
-                    cut = model.createEmptyRowSepa(self, "optimal_cut%d_x%d"%(self.ncuts,c if c >= 0 else -c-1), lhs = None, rhs = cutrhs)
-                    model.cacheRowExtensions(cut)
+                cut = model.createEmptyRowSepa(self, "optimal_cut%d_x%d"%(self.ncuts,c if c >= 0 else -c-1), lhs = None, rhs = cutrhs)
+                model.cacheRowExtensions(cut)
 
-                    for j in range(len(cutcoefs)):
-                        if model.isZero(cutcoefs[j]): # maybe here we need isFeasZero
-                            continue
-                        model.addVarToRow(cut, cols[j].getVar(), cutcoefs[j])
+                for j in range(len(cutcoefs)):
+                    if model.isZero(cutcoefs[j]): # maybe here we need isFeasZero
+                        continue
+                    model.addVarToRow(cut, cols[j].getVar(), cutcoefs[j])
 
-                    if cut.getNNonz() == 0:
-                        assert model.isFeasNegative(cutrhs)
-                        return {"result": SCIP_RESULT.CUTOFF}
+                if cut.getNNonz() == 0:
+                    assert model.isFeasNegative(cutrhs)
+                    return {"result": SCIP_RESULT.CUTOFF}
 
-                    # Only take efficacious cuts, except for cuts with one non-zero coefficient (= bound changes)
-                    # the latter cuts will be handled internally in sepastore.
-                    if cut.getNNonz() == 1 or model.isCutEfficacious(cut):
+                # Only take efficacious cuts, except for cuts with one non-zero coefficient (= bound changes)
+                # the latter cuts will be handled internally in sepastore.
+                if cut.getNNonz() == 1 or model.isCutEfficacious(cut):
 
-                        # flush all changes before adding the cut
-                        model.flushRowExtensions(cut)
+                    # flush all changes before adding the cut
+                    model.flushRowExtensions(cut)
 
-                        infeasible = model.addCut(cut, forcecut=False)
-                        self.ncuts += 1
+                    infeasible = model.addCut(cut, forcecut=False)
+                    self.ncuts += 1
 
-                        if infeasible:
-                           result = SCIP_RESULT.CUTOFF
-                        else:
-                           result = SCIP_RESULT.SEPARATED
-                    model.releaseRow(cut)
-                except Exception as e:
-                    optimal_cut_logger.error(e)
-                    continue # the problem has failed to solve within parameters; skip the row because we could not find a cgf.
+                    if infeasible:
+                       result = SCIP_RESULT.CUTOFF
+                    else:
+                       result = SCIP_RESULT.SEPARATED
+                model.releaseRow(cut)
+#                except Exception as e:
+#                    optimal_cut_logger.error(e)
+                    #continue # the problem has failed to solve within parameters; skip the row because we could not find a cgf.
 
 
         return {"result": result}

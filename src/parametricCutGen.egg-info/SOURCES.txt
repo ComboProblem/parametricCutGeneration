@@ -21,6 +21,8 @@ src/Experiments/source/process_trial_raw_data.sh
 src/Experiments/source/run_trial.py
 src/Experiments/source/setup_experiments.py
 src/Experiments/source/setup_experiments.sh
+src/parametricCutGen/__init__.py
+src/parametricCutGen/cgf_specializations.py
 src/parametricCutGen/cluster_utils.py
 src/parametricCutGen/cut_generation_problem.py
 src/parametricCutGen/cut_score.py

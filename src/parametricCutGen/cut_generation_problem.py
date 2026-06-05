@@ -4,12 +4,16 @@ Define and solve cut generation problems.
 
 from cutgeneratingfunctionology.igp import *
 from minimalFunctionCache.utils import minimal_function_cache_info
-# the rational conversion QQ is imported from cutgeneratingfunctionology.
+# the rational conversion QQ is imported from cutgeneratingfunctionology; ppl and pplite_bsa wrappers are too
 from .execptions import *
 from .cut_score import cutScore
 from .generic_solvers import scipyCutGenProbelmSolverInterface, cvxpyCutGenProblemSolverInterface
+from .cgf_specializations import *
+from scipy.optimize import minimize, LinearConstraint, NonlinearConstraint
+from cvxpy import Variable, Maximize, Minimize, Problem
 import logging
 import time
+
 
 cut_generation_problem_logger = logging.getLogger(__name__)
 cut_generation_problem_logger.setLevel(logging.ERROR)
@@ -405,7 +409,6 @@ class cutGenerationProblem:
                 symmetrized_bkpts += [sage_b, 1+b_sym]
         symmetrized_bkpts = unique_list(symmetrized_bkpts)
         symmetrized_bkpts.sort()
-        cut_generation_problem_logger.debug(f"symmetrized_bkpts={symmetrized_bkpts}")        
         # it might be worth while to ensure if we have sufficient difference between breakpoints.
         model_sparsity = max(float(1/self._max_num_of_bkpts), self._espilon)
         sparse_bkpt = unique_list(sparse_enough_breakpoints(symmetrized_bkpts, model_sparsity))
@@ -430,32 +433,22 @@ class cutGenerationProblem:
         # ensure a breakpoint sequence is given
         sparse_bkpt.sort()
         sparse_bkpt = [QQ(bi) for bi in sparse_bkpt]
+        cut_generation_problem_logger.debug(f"sparse_bkpt={sparse_bkpt}")        
         f_index = sparse_bkpt.index(frac_f)
         self._cut_score.set_f_index(f_index)
-        value_polyhedron = value_nnc_polyhedron_value_cords(sparse_bkpt, f_index, backend=self._backend)
-        cut_generation_problem_logger.debug(f"Dim of value polyhedron : {value_polyhedron.upstairs().ambient_dim()}")
-        linear_constraints, x =  self._solver.write_linear_constraints_from_bsa(value_polyhedron)
-        if self._cut_score._cut_score.is_linear():
-            objective = self._cut_score._cut_score.wrap_cut_score_to_solver_linear_objective(self._solver, mip_obj=binvc, x=x, bkpt=sparse_bkpt, f_index=f_index, objective_sense=self._objective_sense)
-        else:
-            raise ValueError("This method only works for linear objective functions. Try using the bkpt_as_param algorithm.")
-        obj_val, values, status, prob_res = self._solver.lp_solve(linear_constraints, objective, x=x)
-        cut_generation_problem_logger.debug(f"status: {status}, obj_val: {obj_val}")
-        values = [QQ(v) for v in values]
-        point = sparse_bkpt+values
-        self._cut_score.set_current_cell(value_polyhedron)
-        try:
-            b, v = self._cut_score.validate_point(point)
-            self._cut_score.set_feasible_point(b+v)
-            score = self._cut_score(b+v)
-            pi_p = piecewise_function_from_breakpoints_and_values(b+[1], v+[0])
-        except ModelViolation:
-            b = sparse_bkpt
-            v = values
-            pi_p = piecewise_function_from_breakpoints_and_values(b+[1], v+[0])
-            sage_cut = [pi_p(fractional(QQ(bar_a_ij))) for bar_a_ij in binvarow]
-            sage_mip_obj =  [QQ(bar_cj) for bar_cj in binvc]
-            score = float(self._cut_score._cut_score.cut_score(sage_cut, sage_mip_obj))
+        # lets use cvxpy to solve the problem directly
+        x = Variable(len(sparse_bkpt)) # aka the values
+        value_poly_cons = value_nnc_polyhedron_constraints(sparse_bkpt, f_index, x, 'float', self._espilon)
+        value_cons = value_nnc_polyhedron_constraints(sparse_bkpt, f_index, x, coeff_type='float')
+        cut_score_weights = expression_of_steepest_direction_score(binvc, sparse_bkpt, f_index, x)
+        obj = Minimize(cut_score_weights)
+        prob = Problem(obj, value_cons)
+        prob.solve()
+        score = prob.value
+        values = [QQ(v) for v in x.value]
+        b = sparse_bkpt
+        v = values
+        pi_p = piecewise_function_from_breakpoints_and_values(b+[1], v+[0])
         log_problem_result(b, v, binvarow, binvc, f)
         if self._prove_seperator:
             res = minimality_test(pi_p, self._show_proof) # add someway to log certificates.

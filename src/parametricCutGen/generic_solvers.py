@@ -5,7 +5,7 @@ from .execptions import *
 import logging
 
 generic_solver_logger = logging.getLogger(__name__)
-
+generic_solver_logger.setLevel(logging.DEBUG)
 # TODO: Make base classes actually base classes rather than super classing things. This applies for cut_score module too.
 
 class abstractCutGenProblemSolverInterface:
@@ -204,6 +204,7 @@ class cvxpyCutGenProblemSolverInterface(abstractCutGenProblemSolverInterface):
         Given a BSA with only linear constraints, converts the bsa object into a format that the underlying solver can use.
         """
         # TODO:linear specialized code for linear BSAs?
+        generic_solver_logger.debug(f"{bsa}")
         x = Variable(bsa.ambient_dim())
         cons = []
         for polynomial in bsa.eq_poly():
