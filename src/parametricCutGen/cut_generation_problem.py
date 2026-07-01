@@ -245,14 +245,16 @@ class cutGenerationProblem:
         scipy_cons = map_polyhedral_bsa_to_scipy_LinearConstraint(bsa, self._epsilon)
         #cut_generation_problem_logger.debug(f"solve")
         if scip is not None:
-            cutcoefs_expr, cutrhs_expr = self.getParamaterizedCutExpr(scip, cols, rows, binvrow, binvarow, f, sparse_bkpt, f_index)
-            s = self._cut_score_generator.gen_cut_score(f_index,  cutcoefs_expr, cutrhs_expr, binvrow, costs)
+            cutcoefs_expr, cutrhs_expr, integral_indices, lp_soln = self.getParamaterizedCutExpr(scip, cols, rows, binvrow, binvarow, f, sparse_bkpt, f_index)
+            s = self._cut_score_generator.gen_cut_score(f_index,  cutcoefs_expr, cutrhs_expr, lp_soln, costs, integral_indices)
             if self._objective_sense == "maximize":
                 def cut_score(value_parameters):
                     return -1* s(value_parameters)
             else:
                  def cut_score(value_parameters):
-                    return s(value_parameters)     
+                    return s(value_parameters)
+        else:
+            raise NotImplementedError
         result = scipy_minimize(cut_score, x0, constraints=scipy_cons)
         #cut_generation_problem_logger.debug(f"fin")
         score = result.fun
@@ -299,7 +301,7 @@ class cutGenerationProblem:
         map_sage_expr_to_cvpxy_expr = lambda expr : sum( float(expr.coefficient(expr.parent().gens_dict()['gamma'+str(i)]))*cvxpy_vals[i] + float(expr.constant_coefficient()) for i in range(num_bkpt) )
         # data from scip is being passed in
         if scip is not None:
-            cutcoefs_expr, cutrhs_expr = self.getParamaterizedCutExpr(scip, cols, rows, binvrow, binvarow, f, sparse_bkpt, f_index)
+            cutcoefs_expr, cutrhs_expr, integral_indices, lp_soln = self.getParamaterizedCutExpr(scip, cols, rows, binvrow, binvarow, f, sparse_bkpt, f_index)
             cut_generation_problem_logger.debug(f"sage:{cutcoefs_expr, cutrhs_expr}")
             # if the rhs gets used in teh furture; make sure to include the constant terms.
             steepest_dir_expr = sum( map_sage_expr_to_cvpxy_expr(cutcoefs_expr[i])*costs[i] for i in range(len(costs)) )
@@ -357,7 +359,8 @@ class cutGenerationProblem:
         # initialize
         cutcoefs_expr = [K.zero()] * len(cols)
         cutrhs_expr = K.zero()
-
+        integral_indices = []
+        lp_soln = []
         pi_p = pwl_with_value_parameters_and_bkpts_fixed(bkpt, f_index, poly_ring=K)
         f = K(fractional(QQ(primsol)))
         def psi(x):
@@ -372,6 +375,10 @@ class cutGenerationProblem:
         # Generate cut coefficients for the original variables
         for c in range(len(cols)):
             col = cols[c]
+            var = col.getVar()
+            lp_soln.append(var.getLPSol())
+            if var.vtype() != "CONTINUOUS":
+                integral_indices.append(c)
             assert col is not None
             status = col.getBasisStatus()
 
@@ -473,8 +480,9 @@ class cutGenerationProblem:
                 else:
                     assert scip.isFeasZero(act - rlhs)
                     cutrhs_expr -= cutelem_expr * (rlhs - row.getConstant())
-        cut_generation_problem_logger.debug(f"{cutcoefs_expr,cutrhs_expr}")
-        return cutcoefs_expr, cutrhs_expr
+        cut_generation_problem_logger.debug(f"{lp_soln}")
+        
+        return cutcoefs_expr, cutrhs_expr, integral_indices, lp_soln
         # apply algebraic maps to produce cuts in terms of val; val is non-> return list
 #        n = len(bkpt)
 #        coord_names = ['gamma'+str(i) for i in range(n)]
@@ -493,6 +501,5 @@ class cutGenerationProblem:
         Returns a dictionary parameters used to initalize the cut generation problem.
         """
         return self._cgp_input_parameters
-
         
     

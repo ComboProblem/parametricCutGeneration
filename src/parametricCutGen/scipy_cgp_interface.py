@@ -7,13 +7,10 @@ import logging
 scipy_interface_logger = logging.getLogger(__name__)
 scipy_interface_logger.setLevel(logging.ERROR)
 
-"""
-Maps a cutgeneratingfunctionlogy ``basic_semialgebraic_set`` polynomial constraints to scipy constraint objects. 
-"""
 
 def map_polyhedral_bsa_to_scipy_LinearConstraint(bsa, epsilon=10**-9):
-    r"""
-    Maps 
+    """
+    Maps a cutgeneratingfunctionlogy ``basic_semialgebraic_set`` polynomial constraints to scipy constraint objects. 
     """
     lb = []
     ub = []
@@ -133,7 +130,10 @@ class scipyCutScoreForBkptAsParam:
         self._epsilon = epsilon
         self._current_point = None
 
-    def gen_cut_score(self, f_index,  cutcoefs_expr, cutrhs_expr, current_feasible_soln, binvc):
+    def gen_cut_score(self, f_index,  cutcoefs_expr, cutrhs_expr, current_feasible_soln, binvc, integral_indices):
+        """
+        Defines cut score based on fixed problem data.
+        """
         def s(value_parameters):
             val =  to_sage_rationals(value_parameters)
             # val = self.validate_point(val, f_index)
@@ -142,10 +142,11 @@ class scipyCutScoreForBkptAsParam:
             map_to_vector = lambda expr : [expr.coefficient(expr.parent().gens_dict()[name]) for name in coord_names]
             vectors = [ map_to_vector(expr) for expr in cutcoefs_expr ] # inner lists are coeffics of gammis, outer lists are for orignal coordinates
             consts = [float(expr.constant_coefficient()) for expr in cutcoefs_expr ]
-            scipy_interface_logger.debug(f"val:{val} cutcoeffs_expr:{cutcoefs_expr} vectors:{vectors} consts:{consts}")
+            #scipy_interface_logger.debug(f"val:{val} cutcoeffs_expr:{cutcoefs_expr} vectors:{vectors} consts:{consts}")
             cut_lhs = [float(sum(v * u for v, u in zip(val,vec))) + cst for vec, cst in zip(vectors, consts)]
-            cut_rhs = [sum(v*u for v, u in zip(val, map_to_vector(cutrhs_expr)))+ float(cutrhs_expr.constant_coefficient())]
-            return self.cut_score(cut_lhs, cut_rhs, binvc, current_feasible_soln)
+            cut_rhs = float(sum(v*u for v, u in zip(val, map_to_vector(cutrhs_expr))))+ float(cutrhs_expr.constant_coefficient())
+            #scipy_interface_logger.debug(f"{cut_lhs, cut_rhs}")
+            return self.cut_score(cut_lhs, cut_rhs, binvc, current_feasible_soln, integral_indices)
         return s
 
     def validate_point(self, value_parameters, f_index):
@@ -173,34 +174,36 @@ class scipyCutScoreForBkptAsParam:
         # We are assuming breakpoints are model multiplicity free.
         # sprace enough breakpoints ensure no two breakpoitns are close enough to need an epsilon chart when solving.
 
-def scipy_objective_function_parallelism(cut_lhs, cut_rhs, binvc, lp_solution):
+def scipy_objective_function_parallelism(cut_lhs, cut_rhs, binvc, lp_solution, integral_indices):
     # eval cutcoefs_expr at val to get cut. 
     cut = np.array(cut_lhs)/np.linalg.norm(cut_lhs)
     c = np.array(binvc)/np.linalg.norm(binvc)
+    # scipy_interface_logger.debug(f"{cut @ c}")
     return cut @ c
 
-def grad_scipy_objective_function_parallelism(cut_lhs, cut_rhs, binvc, lp_solution):
-    return None
+def grad_scipy_objective_function_parallelism(cut_lhs, cut_rhs, binvc, lp_solution, integral_indices):
+    raise NotImplementedError
 
-def scipy_scip_standard_cut_score(cut_lhs, cut_rhs, binvc, lp_solution):
-    pass
+#def scipy_scip_standard_cut_score(cut_lhs, cut_rhs, binvc, lp_solution, integral_indices):
+#    pass
 
-def scipy_violation(cut_lhs, cut_rhs, binvc, lp_solution):
+def scipy_violation(cut_lhs, cut_rhs, binvc, lp_solution, integral_indices):
+    scipy_interface_logger.debug(f"{np.array(cut_lhs)@ np.array(lp_solution) - cut_rhs}")
     return np.array(cut_lhs)@ np.array(lp_solution) - cut_rhs
     
-def scipy_realitive_violation(cut_lhs, cut_rhs, binvc, lp_solution):
+def scipy_realitive_violation(cut_lhs, cut_rhs, binvc, lp_solution, integral_indices):
     if cut_rhs != 0:
-        return scipy_violation(cut_lhs, cut_rhs, binvc, lp_solution)/abs(cut_rhs)
+        return scipy_violation(cut_lhs, cut_rhs, binvc, lp_solution, integral_indices)/abs(cut_rhs)
     else:
-        return scipy_violation(cut_lhs, cut_rhs, binvc, lp_solution)
+        return scipy_violation(cut_lhs, cut_rhs, binvc, lp_solution, integral_indices)
 
-def scipy_cut_off_distance(cut_lhs, cut_rhs, binvc, lp_solution):
-    return scipy_violation(cut_lhs, cut_rhs, binvc, lp_solution)/np.linalg.norm(np.array(cut_lhs))
+def scipy_cut_off_distance(cut_lhs, cut_rhs, binvc, lp_solution, integral_indices):
+    return scipy_violation(cut_lhs, cut_rhs, binvc, lp_solution, integral_indices)/np.linalg.norm(np.array(cut_lhs))
 
-def integer_support(none):
-    pass
-#def d_scipy_scip_standard_cut_score(sage_cut):
-#    pass
-#
-
+def integer_support(cut_lhs, cut_rhs, binvc, lp_solution, integral_indices):
+    support_count = 0
+    for c in integral_indices:
+        if abs(cut_lhs[c]) > 1e-9:
+            support_count += 1
+    return support_count
     

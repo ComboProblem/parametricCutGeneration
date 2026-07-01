@@ -48,13 +48,13 @@ def record_data(model: Model):
 # model.readSolFile()
 class OracleHeurisitc(Heur):
     def __init__(self, path):
-        self._sol = self.model.readSolFile(path)
+        self._path = path
 
     def heurexec(self, heurtiming, nodeinfeasible):
 
         scip = self.model
         result = SCIP_RESULT.DIDNOTRUN
- 
+        sol = scip.readSolFile(self._path)
         # This heuristic does not run if the LP status is not optimal
         lpsolstat = scip.getLPSolstat()
         if lpsolstat != SCIP_LPSOLSTAT.OPTIMAL:
@@ -81,34 +81,20 @@ class OracleHeurisitc(Heur):
             return {"result": SCIP_RESULT.DIDNOTFIND}
 
 
-import numpy as np
+class OracleSelector(Eventhdlr):
 
-class GreedySolBranch(Branchrule):
+    def __init__(self, model,  path):
+        Eventhdlr.__init__(model)
+        self._path = path
 
-    def __init__(self, scip, path):
-        self.scip = scip
-        self._sol = self.model.readSolFile(path)
-
-    def branchexeclp(self, allowaddcons):
-
-        # Get the branching candidates. Only consider the number of priority candidates (they are sorted to be first)
-        # The implicit integer candidates in general shouldn't be branched on. Unless specified by the user
-        # npriocands and ncands are the same (npriocands are variables that have been designated as priorities)
-        branch_cands, branch_cand_sols, branch_cand_fracs, ncands, npriocands, nimplcands = self.scip.getLPBranchCands()
-
-        # Find the variable that is most fractional
-        best_cand_idx = 0
-        best_dist = np.inf
-        for i in range(npriocands):
-            if abs(branch_cand_fracs[i] - 0.5) <= best_dist:
-                best_dist = abs(branch_cand_fracs[i] - 0.5)
-                best_cand_idx = i
-
-        # Branch on the variable with the largest score
-        down_child, eq_child, up_child = self.model.branchVarVal(
-            branch_cands[best_cand_idx], branch_cand_sols[best_cand_idx])
-
-        return {"result": SCIP_RESULT.BRANCHED}
+    def eventinit(self):
+        self.model.catchEvent(SCIP_EVENTTYPE.NODEFOCUSED, self)
+    
+    def eventexec(self, event):
+        sol = self.model.readSolFile(self._path)
+        oracle_val =  self.model.getSolVal(sol, self.model.getObjective())
+        if  self.model.getCurrentNode().getLowerbound() > oracle_val:
+            self.model.cutoffNode(self.model.getCurrentNode())
 
 #
 #def OracleHeurisitc(Heur):

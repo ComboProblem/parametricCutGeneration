@@ -30,8 +30,11 @@ src/parametricCutGen.egg-info/PKG-INFO
 src/parametricCutGen.egg-info/SOURCES.txt
 src/parametricCutGen.egg-info/dependency_links.txt
 src/parametricCutGen.egg-info/requires.txt
+src/parametricCutGen.egg-info/scm_file_list.json
+src/parametricCutGen.egg-info/scm_version.json
 src/parametricCutGen.egg-info/top_level.txt
 src/parametricCutGen/__pycache__/optimal_cut_generation.cpython-312.pyc
+src/parametricCutGen/code_notes/README.rst
 src/parametricCutGen/code_notes/cut_score.py
 src/parametricCutGen/code_notes/full_space_cgp.py
 src/parametricCutGen/code_notes/generic_solvers.py
