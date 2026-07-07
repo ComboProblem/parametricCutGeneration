@@ -216,7 +216,7 @@ class OptimalCut(Sepa):
                     primsol = cols[c].getPrimsol()
                     assert model.getSolVal(None, var) == primsol
 
-                    if self.cgp._epsilon <= model.frac(primsol) <= 1 - self.cgp._epsilon: # use cgp notion of 0/1
+                    if .05 <= model.frac(primsol) <= 1 - .05: # use cgp notion of 0/1
                         tryrow = True
 
             # generate the cut!

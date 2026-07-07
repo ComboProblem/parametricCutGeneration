@@ -1,36 +1,96 @@
-import logging
-import os
-import json
-import tomllib
+from parametricCutGen.pyscipopt_optimal_cut_generation import OptimalCut
+from parametricCutGen.experimental_utils.pyscipopt_data_collection_events import *
 from pyscipopt import Model
-from parametricCutGen.optimal_cut_generation import OptimalCut
-from parametricCutGen.utils import validate_paths, parse_logger
-from parametricCutGen.scip_data_collection_events import record_data
+import json
+import os
 
-trial_logger = parse_logger(__name__)
+model_name = os.getenv("PROBLEM")
+model_path = os.path.join("model_files", model_name)
+sol_path = os.path.join("solution_files", model_name)
+exp_id = int(os.getenv("SLURM_ARRAY_TASK_ID"))
 
-shell_paths = { "experiment_trial_programs_path":os.getenv("EXPERIMENT_TRIAL_PROGRAMS_PATH"), "model":os.getenv("MODEL"),"data_target_path":os.getenv("DATA_TARGET_PATH"), "container":os.getenv("OPTIMAL_CUT_CONTAINER"), "experiment_params":os.getenv("EXP_PARAM_PATH"), "model_file":os.getenv("MODEL_FILE"), "conduct_experiment_base":os.getenv("PARAMETRIC_EXPS_BASE")  }
+cut_score_names = ['parallelism', 'cut_off', 'violation', 'retaliative_violation']
+trial_bkpts = [2**i for i in range(1,9)]
+trial_cuts = [range(1,9)]
 
-paths = validate_paths(shell_paths, trial_logger)
+def sage_rational_to_json(obj):
+    if isinstance(obj, sage.rings.rational.Rational):
+        return {'__sage.rings.rational.Rational__': True, 'numerator': int(obj.numerator()), 'denominator': int(obj.denominator())}
+    raise TypeError(f'Cannot serialize object of {type(obj)}')
 
-def run_trial_node_evolution(paths):
-    model = Model()
-    cgp_experiment_kwrds = json.loads(os.path.join(paths["experiment_trial_programs_path"], "experiment_parameters.json")
-    write_path = paths["metadata_write_path"]
-    seapa = OptimalCut(cgp_kwds=cgp_experiment_kwrds["cpg_kwds"])
-    model.setSeparating(SCIP_PARAMSETTING.OFF)
-    model.setHeuristics(SCIP_PARAMSETTING.OFF)
-    model.setPresolve(SCIP_PARAMSETTING.OFF)
-    model.includeSepa(sepa, "optimal_cut", "experiment cuts", priority=10000, freq=0)
-    # Add exactly k cuts at the root.
+def as_sage_rational(dct):
+    if '__sage.rings.rational.Rational__' in dct:
+        return QQ(dct["numerator"]/dct["denominator"])
+    return dct
+
+if exp_id == -1:
+	model = Model()
+	model.readProblem(filename=model_path)
+	# model.setParam("limits/time", 3600)
+	model.setSeparating(SCIP_PARAMSETTING.OFF)
+	model.setHeuristics(SCIP_PARAMSETTING.OFF)
+    heuristic = OracleHeurisitc(sol_path)
+    model.includeHeur(heuristic, "OracleHeurisitc", "for observing changes in dual bound from cuts", "Y", timingmask=SCIP_HEURTIMING.DURINGLPLOOP)
+	model.setPresolve(SCIP_PARAMSETTING.OFF)
+    model.setParam("limits/nodes", 1)
+	model=record_data(model)
+	model.hideOutput()
+	model.optimize()
+	model.writeStatistics(filename=os.path.join(os.getenv("DATA"),f"{model_name}.no_cuts.out"))
+    with open(os.path.join(os.getenv("DATA"),f"{model_name}.no_cuts.txt"), 'w') as data_file:
+        json.dump(model.data, data_file, default=sage_rational_to_json)
+	
+elif 0 <= exp_id <= 255:
+	bit_string =  '0'*(8-exp_id.bit_length()) + bin(exp_id)[2:]
+	cut_score_index = int(bit_string[0:2], 2)
+	number_breakpoints_index =  int(bit_string[2:5], 2)
+	number_of_cuts_index =  int(bit_string[5:], 2)
+	cpg_kwds = {'algorithm':'bkpt_as_param', 'cut_score':cut_score_names[cut_score_index],  'max_num_of_bkpts': trial_bkpts[number_breakpoints_index]}
+	numb_cuts = trial_cuts[number_of_cuts_index]
+	model = Model()
+	model.readProblem(filename=model_path)
+	model.setParam("limits/time", 3600)
+	model.setSeparating(SCIP_PARAMSETTING.OFF)
+    sepa = OptimalCut(write_cgf_data=True, cgp_kwds=cpg_kwds)
+    model.includeSepa(sepa, "optimal_cut", "optimal cut over space of paramaterized cut generating functions", priority=10000, freq=0)
     model.setParam("separating/maxcutsroot", 1)
-    model.setParam("separating/maxroundsroot", cgp_experiment_kwrds["max_number_of_cuts"])
-    model.setParam("limits/nodes", 10000000)
-    model = record_data(model, write_path)
-    record_data = record_data(model) 
-    model.readProblem(paths["model_file"])
-    try:
-        model.optimize()
-    except Exception as e:
-        
-    model.data
+    model.setParam("separating/maxroundsroot", numb_cuts)
+	model.setHeuristics(SCIP_PARAMSETTING.OFF)
+    heuristic = OracleHeurisitc(sol_path)
+    model.includeHeur(heuristic, "OracleHeurisitc", "for observing changes in dual bound from cuts", "Y", timingmask=SCIP_HEURTIMING.DURINGLPLOOP)
+	model.setPresolve(SCIP_PARAMSETTING.OFF)
+    model.setParam("limits/nodes", 1)
+	model=record_data(model)
+	model.hideOutput()	
+    model.optimize()
+	model.writeStatistics(filename=os.path.join(os.getenv("DATA"),f"{model_name}.bkpt_as_param.{cgp_kwds['cut_score']}.{cgp_kwds[max_num_of_bkpts]}.{numb_cuts}.out"))
+    with open(os.path.join(os.getenv("DATA"),f"{model_name}.no_cuts.txt"), 'w') as data_file:
+        json.dump(model.data, data_file, default=sage_rational_to_json)
+	
+elif exp_id > 255:
+	exp_id = exp_id - 255
+	bit_string =  '0'*(6-exp_id.bit_length()) + bin(exp_id)[2:]
+	number_breakpoints_index =  int(bit_string[0:3], 2)
+	number_of_cuts_index =  int(bit_string[3:], 2)
+	cpg_kwds = {'algorithm':'value_poly_lp', max_bkpt=trial_bkpts[number_breakpoints_index]}
+	numb_cuts =  trial_cuts[number_of_cuts_index]
+	numb_cuts = trial_cuts[number_of_cuts_index]
+	model = Model()
+	model.readProblem(filename=model_path)
+	model.setParam("limits/time", 3600)
+	model.setSeparating(SCIP_PARAMSETTING.OFF)
+    sepa = OptimalCut(write_cgf_data=True, cgp_kwds=cpg_kwds)
+    model.includeSepa(sepa, "optimal_cut", "optimal cut over space of paramaterized cut generating functions", priority=10000, freq=0)
+    model.setParam("separating/maxcutsroot", 1)
+    model.setParam("separating/maxroundsroot", numb_cuts)
+	model.setHeuristics(SCIP_PARAMSETTING.OFF)
+    heuristic = OracleHeurisitc(sol_path)
+    model.includeHeur(heuristic, "OracleHeurisitc", "for observing changes in dual bound from cuts", "Y", timingmask=SCIP_HEURTIMING.DURINGLPLOOP)
+	model.setPresolve(SCIP_PARAMSETTING.OFF)
+    model.setParam("limits/nodes", 1)
+	model=record_data(model)
+	model.hideOutput()
+	model.optimize()
+	model.writeStatistics(filename=os.path.join(os.getenv("DATA"),f"{model_name}.bkpt_as_param.{cgp_kwds['cut_score']}.{cgp_kwds[max_num_of_bkpts]}.{numb_cuts}.out"))
+    with open(os.path.join(os.getenv("DATA"),f"{model_name}.no_cuts.txt"), 'w') as data_file:
+        json.dump(model.data, data_file, default=sage_rational_to_json)

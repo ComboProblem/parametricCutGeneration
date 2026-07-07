@@ -1,0 +1,37 @@
+# Outline
+# in detached shell, compile and run run_cluster_experiments.sh
+
+# run_cluster_experiments.sh in src/Experiments
+## make_temp() -> $TEMP
+## make_data() -> $DATA
+## get_models() -> $MODEL_FILES (feasible subset of benchmark only)
+## get_sols() -> $SOL_FILES (feasible subset only)
+## build_apptainer() -> $OPTIMAL_CUT_CONTAINER
+## setup_exerpiment_scripts() -> $TEMP/run_experiments_for_$PROBLEM.sh 
+## run_problem_experiments() -> $DATA/$PROBLEM 
+
+# run_experiments_for_$PROBLEM.sh
+# export PROBLEM_PATH=$MODEL_FILES/PROBLEM
+# slurm job array 0--287 ... src/Experiment/source/run_experiment.sh TIME=$TRIAL_TIME+1 ... slrum info
+# how many exps are being ran?
+## bkpt as param : 4*16*8 =2^8 # first 2 bits -> algorithm, next 3, num_bkpt, next 3 bits num_cuts fixing above gives nice job array
+## value_poly_lp : 16*8 = 2^5 same mapping 
+### mapping@ how long per experiment? time cap implicity of say 10m/per as set by time, mem at 10GB (500GB ~50jobs) 240 jobs ~2 weeks to finsih maybe. 
+# Create a job array -1-287+ and run_experiment.sh 
+# run_experiment.sh
+# source run_experiment_for_$PROBLEM.sh
+## apptainer call to run_experiment.py
+## if job_number == -1
+base_line
+record data to $DATA/$PROBLEM.no_cut.out
+
+if 0 <=job number <= 255, bkpt elif value_poly_lp use job_number - 255
+## decode job_number
+## 
+## run scip with optimal cut with $TRIAL_TIME and node limit = 1
+## record data to $DATA/$PROBLEM.algo.cut_score.bkpt.cuts.out and  $DATA/$PROBLEM.algo.cut_score.bkpt.cuts.cgf_info.out
+$DATA/$PROBLEM.algo.cut_score.bkpt.cuts..out
+
+## process data. 
+
+For $PROBLEM in 

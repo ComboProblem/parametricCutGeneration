@@ -5,6 +5,7 @@ from parametricCutGen.cgf_specializations import *
 from pyscipopt import Model
 from pyscipopt import Model, quicksum, SCIP_PARAMSETTING, exp, log, sqrt, sin, SCIP_HEURTIMING
 from cvxpy import Variable, Problem, Minimize
+import json
 
 import logging
 
@@ -38,6 +39,11 @@ def plot_primal_dual_evolution(model: Model, num_bkpt):
     plt.legend(loc="best")
     return plt
 
+def sage_rational_to_json(obj):
+    if isinstance(obj, sage.rings.rational.Rational):
+        return {'__sage.rings.rational.Rational__': True, 'numerator': int(obj.numerator()), 'denominator': int(obj.denominator())}
+    raise TypeError(f'Cannot serialize object of {type(obj)}')
+
 def check_for_gmics(paramed_cgfs):
     pass
 #b = [0, 76/33672873, 7290191/119903003, 16965671/130581379, 12570730/62300759, 358957910381105/745783659626811, 58934854246777/77490406121583, 3825777230473888/4397050191231867, 3792006029277104/4037478592337619]
@@ -54,14 +60,16 @@ def check_for_gmics(paramed_cgfs):
 #
 # think above levels and which primal heursitics are allowed; like rounding ect to find feasible solutions for relaxations proving relaxations ects. 
 # What is the parameters; 
+problem = "gen-ip016"
+num_bkpts = 2
 data = {}
 final_stats = {}
 model = Model()
-model.readProblem(filename="/home/acadia/Downloads/gen-ip016.mps")
-model.setParam("limits/time", 60)
-#model.setSeparating(SCIP_PARAMSETTING.OFF)
+model.readProblem(filename=f"/home/acadia/Downloads/{problem}.mps")
+model.setParam("limits/time", 1200)
+model.setSeparating(SCIP_PARAMSETTING.OFF)
 #logging.disable()
-sepa = OptimalCut(write_cgf_data=False, cgp_kwds={"algorithm" : "bkpt_as_param", "cut_score":"violation", "max_num_of_bkpts": 16, "backend":None})
+sepa = OptimalCut(write_cgf_data=True, cgp_kwds={"algorithm" : "bkpt_as_param", "cut_score": "violation", "max_num_of_bkpts": num_bkpts, "backend":None})
 model.includeSepa(sepa, "optimal_cut", "optimal_cut test")
 model.setHeuristics(SCIP_PARAMSETTING.OFF)
 model.setPresolve(SCIP_PARAMSETTING.OFF)
@@ -77,11 +85,11 @@ model.setPresolve(SCIP_PARAMSETTING.OFF)
 #model.setParam("separating/maxruns", 1)
 #sol = model.readSolFile("/home/acadia/Downloads/markshare_4_0.sol.gz")
 #purner = OracleSelector(model, '/home/acadia/Downloads/gen-ip016.sol')
-heuristic = OracleHeurisitc('/home/acadia/Downloads/gen-ip016.sol')
+heuristic = OracleHeurisitc(f'/home/acadia/Downloads/{problem}.sol')
 #model.includeEventhdlr(purner, "test", "test")
 model.includeHeur(heuristic, "OracleHeurisitc", "for observing changes in dual bound from cuts", "Y", timingmask=SCIP_HEURTIMING.DURINGLPLOOP)
 #model.setParam("branching/random/priority", 20000)
-#model.setParam("limits/nodes", 1000000)
+model.setParam("limits/nodes", 1)
 model=record_data(model)
 model.hideOutput()
 try:
@@ -89,12 +97,15 @@ try:
 except Exception as e:
     print(e)
 print(model.getStatus())
-data["default"] = model.data
-model.writeStatistics(filename=f"gen-ip016.bkpt_as_param.violation.out")
+
+with open(f"{problem}.bkpt_as_param.violation.{num_bkpts}.txt", 'w') as data_file:
+    json.dump(model.data, data_file, default=sage_rational_to_json)
+# data["default"] = model.data
+model.writeStatistics(filename=f"{problem}.bkpt_as_param.violation.{num_bkpts}.out")
 default_solve_time = model.getSolvingTime()
 default_num_nodes = model.getNTotalNodes()
 final_stats["default"] = (default_solve_time, default_num_nodes)
-
+#print(data)
 #for l in [1,2,3,4,5]:
 #    for k in [2**i for i in range(1,5)]:
 #        model = Model()
