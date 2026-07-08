@@ -215,10 +215,10 @@ class OptimalCut(Sepa):
                 if var.vtype() != "CONTINUOUS":
                     primsol = cols[c].getPrimsol()
                     assert model.getSolVal(None, var) == primsol
-
-                    if .0001 <= model.frac(primsol) <= 1 - .0001:
+                    # while cut generating problems can address small value, we don't konw the effects on teh cuts numerical stablility.
+                    if .01 <= model.frac(primsol) <= 1 - .01:
                         to_try.append(i)
-        # pick the order to process the rows we will try to generate cuts for
+        # pick the order to process the rows we will try to generate cuts
         process_order = sorted(to_try, key = lambda i: abs(model.frac(cols[basisind[i]].getPrimsol())-1/2))
         # work on generating an optimal cut. 
         for i in process_order:

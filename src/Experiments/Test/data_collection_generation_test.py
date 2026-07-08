@@ -58,10 +58,10 @@ def check_for_gmics(paramed_cgfs):
 #
 # think above levels and which primal heursitics are allowed; like rounding ect to find feasible solutions for relaxations proving relaxations ects. 
 # What is the parameters; 
-problem = "enlight_hard"
-num_bkpts = 1000000
+problem = "10teams"
+num_bkpts = 100
 cut_score_name = "parallelism"
-cuts_at_root = 10
+cuts_at_root = 1
 data = {}
 final_stats = {}
 model = Model()
