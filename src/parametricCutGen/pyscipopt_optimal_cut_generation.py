@@ -1,22 +1,19 @@
 from cutgeneratingfunctionology.igp import *
 from minimalFunctionCache.utils import minimal_function_cache_info
 from .cut_generation_problem import *
-
-# the rational conversion QQ is imported from cutgeneratingfunctionology.
-#from scipy.optimize import minimize, LinearConstraint, NonlinearConstraint
 from pyscipopt import Model, Sepa, SCIP_RESULT
-import json
 import logging
-import os
-import time
+
+# QQ is imported implicitly from cutgeneratingfunctionology.igp
 
 optimal_cut_logger = logging.getLogger(__name__)
 optimal_cut_logger.setLevel(logging.ERROR)
-# Adapted from the example in the docs. https://pymodelopt.readthedocs.io/en/latest/tutorials/separator.html
 
-# Note; pplitepy has numeric issues when converting python ints to c longs. 
+# Adapted from the example in the docs. hhttps://pyscipopt.readthedocs.io/en/latest/tutorials/separator.html
+# Note; pplitepy is in an alpha stage so this can't be relied on. Use ppl until this comment is updated. 
+
 class OptimalCut(Sepa):
-    def __init__(self, *, write_cgf_data=False, cgp_kwds=None):
+    def __init__(self, *, cgp_kwds=None, cgp_timing=True, write_cgf_data=False):
         """
         TESTS::
         >>> from parametricCutGen.optimal_cut_generation import OptimalCut
@@ -34,6 +31,12 @@ class OptimalCut(Sepa):
             self.cgp = cutGenerationProblem()
         else:    
             self.cgp = cutGenerationProblem(**cgp_kwds)
+        # For help keeping within scip limits/time. There is no timing enforced in while solving a cgp at the moment. 
+        self.cgp_timing = cgp_timing
+        if self.cgp_timing:
+            self.cgp_solve_time = 0
+            self.ncgp_solves = 0
+            self.mean_cgp_solve_time = 0
 
     def getOptimalCutFromRow(self, cols, rows, binvrow, binvarow, primsol, pi_p):
         """ Given the row (binvarow, binvrow) of the tableau, computes optimized cut.
@@ -186,7 +189,6 @@ class OptimalCut(Sepa):
     def sepaexeclp(self):
         result = SCIP_RESULT.DIDNOTRUN
         model = self.model
-
         if not model.isLPSolBasic():
             return {"result": result}
 
@@ -202,12 +204,10 @@ class OptimalCut(Sepa):
 
         # get basis indices
         basisind = model.getLPBasisInd()
-
-        # For all basic columns (not slacks) belonging to integer variables, try to generate an optimal cut
+        # For all basic columns (not slacks) belonging to integer variables, decide if the row should be tried. 
+        to_try = []
         for i in range(len(rows)):
-            tryrow = False
             c = basisind[i]
-
             if c >= 0:
                 assert c < len(cols)
                 var = cols[c].getVar()
@@ -216,63 +216,78 @@ class OptimalCut(Sepa):
                     primsol = cols[c].getPrimsol()
                     assert model.getSolVal(None, var) == primsol
 
-                    if .05 <= model.frac(primsol) <= 1 - .05: # use cgp notion of 0/1
-                        tryrow = True
+                    if .0001 <= model.frac(primsol) <= 1 - .0001:
+                        to_try.append(i)
+        # pick the order to process the rows we will try to generate cuts for
+        process_order = sorted(to_try, key = lambda i: abs(model.frac(cols[basisind[i]].getPrimsol())-1/2))
+        # work on generating an optimal cut. 
+        for i in process_order:
+            if self.cgp_timing:
+                if model.getParam("limits/time") - model.getTotalTime()- self.mean_cgp_solve_time < 0:
+                    break
+            c = basisind[i]
+            primsol = cols[c].getPrimsol()
+            optimal_cut_logger.debug(f"c={c}")
+            # get the row of B^-1 for this basic integer variable with fractional solution value
+            binvrow = model.getLPBInvRow(i)
 
-            # generate the cut!
-            if tryrow:
-                optimal_cut_logger.debug(f"c={c}")
-                # get the row of B^-1 for this basic integer variable with fractional solution value
-                binvrow = model.getLPBInvRow(i)
+            # get the tableau row for this basic integer variable with fractional solution value
+            binvarow = model.getLPBInvARow(i)
 
-                # get the tableau row for this basic integer variable with fractional solution value
-                binvarow = model.getLPBInvARow(i)
+            # get current reduced costs for objective evaluation.
+            costs = [model.getColRedCost(j) for j in cols if j not in basisind]
 
-                # get current reduced costs for objective evaluation.
-                costs = [model.getColRedCost(j) for j in cols if j not in basisind]
-#                try:
-                cgf, cut_score = self.cgp.solve(binvrow, binvarow, primsol, costs, cols, rows, model) # produce an optimal cgf
-              
-                if self.write_cgf_data:
-                    if not hasattr(model, "data") or model.data==None:
-                        model.data = {}
-                        model.data["cgf_log"] = []
-                    b = cgf.end_points()
-                    v = cgf.values_at_end_points()
-                    model.data["cgf_log"].append(((b,v), cut_score, c))
-                optimal_cut_logger.debug(f"b={cgf.end_points()}\nv={cgf.values_at_end_points()}")
-                cutcoefs, cutrhs = self.getOptimalCutFromRow(cols, rows, binvrow, binvarow, primsol, cgf)
+            # start clock
+            if self.cgp_timing:
+                cgp_start_time = model.getTotalTime()
 
-                cut = model.createEmptyRowSepa(self, "optimal_cut%d_x%d"%(self.ncuts,c if c >= 0 else -c-1), lhs = None, rhs = cutrhs)
-                model.cacheRowExtensions(cut)
+            cgf, cut_score, prob_dim = self.cgp.solve(binvrow, binvarow, primsol, costs, cols, rows, model) # produce an optimal cgf
 
-                for j in range(len(cutcoefs)):
-                    if model.isZero(cutcoefs[j]): # maybe here we need isFeasZero
-                        continue
-                    model.addVarToRow(cut, cols[j].getVar(), cutcoefs[j])
+            # keep running track of average solve time.
+            if self.cgp_timing:
+                self.cgp_solve_time += model.getTotalTime()-cgp_start_time
+                self.ncgp_solves += 1
+                self.mean_cgp_solve_time = self.cgp_solve_time/self.ncgp_solves
 
-                if cut.getNNonz() == 0:
-                    assert model.isFeasNegative(cutrhs)
-                    return {"result": SCIP_RESULT.CUTOFF}
+        
+            if self.write_cgf_data:
+                if not hasattr(model, "data") or model.data==None:
+                    model.data = {}
+                    model.data["cgf_log"] = []
+                b = cgf.end_points()
+                v = cgf.values_at_end_points()
+                model.data["cgf_log"].append(((b,v), cut_score, prob_dim, self.ncuts, c if c >= 0 else -c-1)) # can be used to map cgfs to cuts applied. 
 
-                # Only take efficacious cuts, except for cuts with one non-zero coefficient (= bound changes)
-                # the latter cuts will be handled internally in sepastore.
-                if cut.getNNonz() == 1 or model.isCutEfficacious(cut):
+            optimal_cut_logger.debug(f"b={cgf.end_points()}\nv={cgf.values_at_end_points()}")
 
-                    # flush all changes before adding the cut
-                    model.flushRowExtensions(cut)
+            cutcoefs, cutrhs = self.getOptimalCutFromRow(cols, rows, binvrow, binvarow, primsol, cgf)
 
-                    infeasible = model.addCut(cut, forcecut=False)
-                    self.ncuts += 1
+            cut = model.createEmptyRowSepa(self, "optimal_cut%d_x%d"%(self.ncuts, c if c >= 0 else -c-1), lhs = None, rhs = cutrhs)
+            model.cacheRowExtensions(cut)
 
-                    if infeasible:
-                       result = SCIP_RESULT.CUTOFF
-                    else:
-                       result = SCIP_RESULT.SEPARATED
-                model.releaseRow(cut)
-#                except Exception as e:
-#                    optimal_cut_logger.error(f"Optimal cut generation failed: Error {e}")
-#                    continue # the problem has failed to solve within parameters; skip the row because we could not find a cgf.
+            for j in range(len(cutcoefs)):
+                if model.isZero(cutcoefs[j]): # maybe here we need isFeasZero
+                    continue
+                model.addVarToRow(cut, cols[j].getVar(), cutcoefs[j])
 
+            if cut.getNNonz() == 0:
+                assert model.isFeasNegative(cutrhs)
+                return {"result": SCIP_RESULT.CUTOFF}
+
+            # Only take efficacious cuts, except for cuts with one non-zero coefficient (= bound changes)
+            # the latter cuts will be handled internally in sepastore.
+            if cut.getNNonz() == 1 or model.isCutEfficacious(cut):
+
+                # flush all changes before adding the cut
+                model.flushRowExtensions(cut)
+
+                infeasible = model.addCut(cut, forcecut=False)
+                self.ncuts += 1
+
+                if infeasible:
+                   result = SCIP_RESULT.CUTOFF
+                else:
+                   result = SCIP_RESULT.SEPARATED
+            model.releaseRow(cut)
 
         return {"result": result}

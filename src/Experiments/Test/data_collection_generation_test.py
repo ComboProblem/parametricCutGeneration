@@ -9,8 +9,6 @@ import json
 
 import logging
 
-test_logging = logging.getLogger(__name__)
-test_logging.setLevel(logging.DEBUG)
 
 def plot_primal_dual_evolution(model: Model, num_bkpt):
     try:
@@ -60,22 +58,24 @@ def check_for_gmics(paramed_cgfs):
 #
 # think above levels and which primal heursitics are allowed; like rounding ect to find feasible solutions for relaxations proving relaxations ects. 
 # What is the parameters; 
-problem = "gen-ip016"
-num_bkpts = 2
+problem = "enlight_hard"
+num_bkpts = 1000000
+cut_score_name = "parallelism"
+cuts_at_root = 10
 data = {}
 final_stats = {}
 model = Model()
 model.readProblem(filename=f"/home/acadia/Downloads/{problem}.mps")
-model.setParam("limits/time", 1200)
+model.setParam("limits/time", 600)
 model.setSeparating(SCIP_PARAMSETTING.OFF)
 #logging.disable()
-sepa = OptimalCut(write_cgf_data=True, cgp_kwds={"algorithm" : "bkpt_as_param", "cut_score": "violation", "max_num_of_bkpts": num_bkpts, "backend":None})
+sepa = OptimalCut(write_cgf_data=True, cgp_kwds={"algorithm" : "bkpt_as_param", "cut_score": cut_score_name , "max_num_of_bkpts": num_bkpts, "backend":None})
 model.includeSepa(sepa, "optimal_cut", "optimal_cut test")
 model.setHeuristics(SCIP_PARAMSETTING.OFF)
 model.setPresolve(SCIP_PARAMSETTING.OFF)
 #model.disablePropagation()
-#model.setParam("separating/maxcutsroot", 1)
-#model.setParam("separating/maxroundsroot", l)
+model.setParam("separating/maxcutsroot", 1)
+model.setParam("separating/maxroundsroot", cuts_at_root)
 #model.setParam("separating/poolfreq", 0)
 #model.setParam("separating/maxroundsrootsubrun", -1)
 #model.setParam("separating/maxcuts", 1)
@@ -92,16 +92,17 @@ model.includeHeur(heuristic, "OracleHeurisitc", "for observing changes in dual b
 model.setParam("limits/nodes", 1)
 model=record_data(model)
 model.hideOutput()
+model.redirectOutput()
 try:
     model.optimize()
 except Exception as e:
     print(e)
 print(model.getStatus())
 
-with open(f"{problem}.bkpt_as_param.violation.{num_bkpts}.txt", 'w') as data_file:
+with open(f"{problem}.bkpt_as_param.{cut_score_name }.{num_bkpts}.{cuts_at_root}.txt", 'w') as data_file:
     json.dump(model.data, data_file, default=sage_rational_to_json)
 # data["default"] = model.data
-model.writeStatistics(filename=f"{problem}.bkpt_as_param.violation.{num_bkpts}.out")
+model.writeStatistics(filename=f"{problem}.bkpt_as_param.{cut_score_name }.{num_bkpts}.{cuts_at_root}.out")
 default_solve_time = model.getSolvingTime()
 default_num_nodes = model.getNTotalNodes()
 final_stats["default"] = (default_solve_time, default_num_nodes)

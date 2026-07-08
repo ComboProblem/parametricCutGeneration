@@ -79,19 +79,7 @@ def log_problem_result(bkpt, val, binvarow, binvc, f):
     cut_generation_problem_logger.info(f"row: {binvarow}")
     cut_generation_problem_logger.info(f"objective:{binvc}")
     cut_generation_problem_logger.info(f"f: {f}")
-
-class cgpTimer:
-    def __init__(self, max_time):
-        if max_time is None:
-            max_time = 2**63-1
-        self._max_time = max_time
-        self._start_time = time.process_time()
-
-    def solver_time_out(self):
-        if time.process_time() - self._start_time >= self._max_time:
-            cut_generation_problem_logger.warning(f"Solver timed out.")
-            return True
-        return False
+            
 
 # cutGenProblemParametersNames = ["algorithm", "cut_score", "max_num_bkpt", "multithread", "prove_seperator", "epsilon", "M", "max_cgp_solver_time", "max_cgf_solver_iter"]
 
@@ -170,7 +158,6 @@ class cutGenerationProblem:
         self._cvxpy_kwds = cvxpy_solve_kwds
         self._scipy_kewords = scipy_kwds
         self._scipy_args = scipy_args
-
         
     def __repr__(self):
         return f"Cut generation problem using algorithm {self._algorithm}."
@@ -183,12 +170,11 @@ class cutGenerationProblem:
         Passes any instructions to the underlying solver.
         """
         if self._algorithm == "full":
-            cgf, cut_score = self._algorithm_full_space(binvrow, binvarow, f, costs, cols, rows, scip)
+            return self._algorithm_full_space(binvrow, binvarow, f, costs, cols, rows, scip)
         elif self._algorithm == "bkpt_as_param":
-            cgf, cut_score = self._algorithm_bkpt_as_param(binvrow, binvarow, f, costs, cols, rows, scip)
+            return self._algorithm_bkpt_as_param(binvrow, binvarow, f, costs, cols, rows, scip)
         elif self._algorithm == "value_poly_lp":
-            cgf, cut_score = self._algorithm_value_poly_lp(binvrow, binvarow, f, costs, cols, rows, scip)
-        return cgf, cut_score
+            return self._algorithm_value_poly_lp(binvrow, binvarow, f, costs, cols, rows, scip)
 
     def _algorithm_full_space(self, binvrow, binvarow, f, costs, cols=None, rows=None, scip=None):
         r"""
@@ -221,7 +207,7 @@ class cutGenerationProblem:
         num_bkpt = len(sparse_bkpt)
         # ensure a breakpoint sequence is given
         sparse_bkpt.sort()
-        sparse_bkpt = [QQ(bi) for bi in sparse_bkpt]    
+        sparse_bkpt = [QQ(b) for b in sparse_bkpt]    
         f_index = sparse_bkpt.index(frac_f)
         cut_generation_problem_logger.debug(f"sparse_bkpt={sparse_bkpt}\nf_index={f_index}")    
         # to use scipy; we find an inital point via a polyhedron
@@ -266,7 +252,7 @@ class cutGenerationProblem:
         if self._prove_seperator:
             res = minimality_test(pi_p, self._show_proof) # add someway to log certificates.
             cut_generation_problem_logger.info(f"Minimality of cgf: {res}")
-        return pi_p, score
+        return pi_p, score, len(sparse_bkpt)
 
     def _algorithm_value_poly_lp(self, binvrow, binvarow, f, costs, cols=None, rows=None, scip=None):
         problem_timer = cgpTimer(self._max_cgp_solver_time)
@@ -331,7 +317,7 @@ class cutGenerationProblem:
         if self._prove_seperator: # note; in general the minimality test will be false unless using an exact rational solver for the lp problem.
             res = minimality_test(pi_p, self._show_proof) # add someway to log certificates.
             cut_generation_problem_logger.info(f"Minimality of cgf: {res}")
-        return pi_p, score
+        return pi_p, score, len(sparse_bkpt)
 
     def getParamaterizedCutExpr(self, scip, cols, rows, binvrow, binvarow, primsol, bkpt, f_index):
         """ Given the row (binvarow, binvrow) of the tableau, computes and expression for the cut in the value parameters (gammai).

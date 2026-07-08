@@ -2,6 +2,10 @@ from pyscipopt import Model, SCIP_EVENTTYPE, SCIP_RESULT, Eventhdlr, SCIP_PARAMS
 from pyscipopt import Model, Heur, SCIP_HEURTIMING, SCIP_LPSOLSTAT
 import os
 import logging
+from contextlib import redirect_stdout
+import sys
+import io
+
 
 data_collection_logger = logging.getLogger(__name__)
 data_collection_logger.setLevel(logging.DEBUG)
@@ -28,7 +32,15 @@ def record_data(model: Model):
                 self.model.data["primal_log"].append([self.model.getSolvingTime(), self.model.getPrimalbound()])
             
             if event.getType() == SCIP_EVENTTYPE.DUALBOUNDIMPROVED:
-                self.model.data["dual_log"].append([self.model.getSolvingTime(), self.model.getDualbound()])
+                cuts_applied = []
+                for row in self.model.getLPRowsData():
+                    if row.getOrigintype() == 3: # created from a separator
+                        with redirect_stdout(io.StringIO()) as f:
+                            self.model.printRow(row)
+                        s = f.getvalue()
+                        cuts_applied.append(s[:-2]) # get rid of new line character.
+                self.model.data["dual_log"].append([self.model.getSolvingTime(), self.model.getDualbound(), self.model.getNCutsApplied(), cuts_applied])
+                
              
 
     if not hasattr(model, "data") or model.data==None:
