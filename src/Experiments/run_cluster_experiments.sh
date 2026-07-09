@@ -1,32 +1,35 @@
-#!/bin/bash -x
+#!/bin/bash
 
-export PARTITION=""
-export CLUSTER_ACCOUNT=""
+PARTITION="partition_name"
+CLUSTER_ACCOUNT="account_name"
 
 get_models() {
-if ! [ -f "model_files/benchmark.zip" ] 
+if ! [ -f "downloads/benchmark.zip" ] 
 then
     echo "Downloading benchmark instances"
-    wget http://miplib.zib.de/downloads/benchmark.zip -P instances/
+    wget http://miplib.zib.de/downloads/benchmark.zip -P downloads/
+    unzip -u downloads/benchmark.zip -d model_files
+    for compressed_model in model_files/*
+    do 
+        gzip -d $compressed_model
+    done
 else
     echo "Benchmark instance archive already exists."
 fi
-
-unzip -u model_files/benchmark.zip -d model_files
-
-fi
 }
 get_solutions() {
-if ! [ -f "solution_files/benchmark.zip" ] 
+if ! [ -f "downloads/solutions.zip" ] 
 then
     echo "Downloading all solutions."
-    wget http://miplib.zib.de/downloads/benchmark.zip -P instances/
+    wget https://miplib.zib.de/downloads/solutions.zip -P downloads/
+    unzip -u solution_files/solutions.zip -d solution_files
+    for model in solution_files/solutions/*
+    do
+    	model_name=($basename $model)
+	    gzip -d solution_files/solutions/$model_name/1/$model_name.sol.gz
+    done
 else
     echo "Solution archive already exists."
-fi
-
-unzip -u model_files/benchmark.zip -d model_files
-
 fi
 }
 
@@ -42,24 +45,21 @@ fi
 }
 
 run_experiments(){
-# The number of * is based on the number of non global parameters for experiments
-# Currently the directory paths represent algorithm/cut_score/max_number_of_bkpts/max_number_of_cuts/
-# see fun:setup_experiment_paths in setup_experiments.py 
-for experiment in filename="${fullfile##*/}"
-do 
-    chmod +x $experiment
-    echo "Dispatching trial runs for $experiment."
-    ./$experiment
+for model in model_files/*
+do
+    model_name=$(basename $model .mps)
+    echo "Queueing experiments for $model_name."
+    sbatch --array=0--256 --account=$CLUSTER_ACCOUNT --partition=$PARTITION --time=200:00 --output="TEMP/$model_name_expID_%a.out"source/run_experiments.sh $model_name 
 done
 }
 
-main(){
-echo "Loading cluster environment." 
-source "./src/Experiments/source/cluster_environment.sh"
-file_system_setup()
-get_models()
-check_apptainer()
-run_experiments()
+main() {
+chmod +x source/run_experiments.sh
+get_models
+get_solutions
+check_apptainer
+mkdir TEMP
+run_experiments
 }
 
-main()
+main
