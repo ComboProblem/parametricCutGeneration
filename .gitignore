@@ -9,6 +9,8 @@ src/parametricCutGeneration.egg-info/
 # Ignore dataset and problem files
 *.mps
 *.gz
+*.sol
+*.yaml
 # Ignore compressed downloaded files
 *.tar
 *.zip
