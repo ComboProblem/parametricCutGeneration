@@ -5,14 +5,14 @@ From: ubuntu:24.04
     apt-get update -y
     apt-get install -y pip git gh python3.12-full
     apt-get clean
-    pip install cvxpy
-    pip install scipy
-    pip install pyscipopt
     git clone --branch MinFunStable https://github.com/ComboProblem/cutgeneratingfunctionology.git
     cd cutgeneratingfunctionology
     python3 -m venv /cgf-venv/venv
     source /cgf-venv/venv/bin/activate
     pip install ".[passagemath]"
+    pip install cvxpy
+    pip install scipy
+    pip install pyscipopt
     pip install pplitepy
     git clone https://github.com/ComboProblem/MinimalFunctionCache.git
     cd MinimalFunctionCache
