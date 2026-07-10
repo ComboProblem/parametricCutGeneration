@@ -4,7 +4,6 @@ Define and solve cut generation problems.
 
 from cutgeneratingfunctionology.igp import *
 from .execptions import *
-from .cut_score import cutScore
 from .scipy_cgp_interface import *
 from .cgf_specializations import * # imports cut generating functionololgy and specalizations
 from scipy.optimize import minimize as scipy_minimize
