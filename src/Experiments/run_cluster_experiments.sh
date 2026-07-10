@@ -49,7 +49,7 @@ for model in model_files/*
 do
     model_name=$(basename $model .mps)
     echo "Queueing experiments for $model_name."
-    sbatch --array=0--256 --account=$CLUSTER_ACCOUNT --partition=$PARTITION --time=200:00 --output="TEMP/$model_name_expID_%a.out"source/run_experiments.sh $model_name 
+    sbatch --array=0--256 --account=$CLUSTER_ACCOUNT --partition=$PARTITION --time=20	0:00 --output="TEMP/$model_name_expID_%a.out"source/run_experiments.sh $model_name 
 done
 }
 
