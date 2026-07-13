@@ -25,7 +25,7 @@ then
     unzip -u solution_files/solutions.zip -d solution_files
     for model in solution_files/solutions/*
     do
-    	model_name=($basename $model)
+    	model_name=$(basename $model)
 	    gzip -d solution_files/solutions/$model_name/1/$model_name.sol.gz
     done
 else
@@ -49,7 +49,7 @@ for model in model_files/*
 do
     model_name=$(basename $model .mps)
     echo "Queueing experiments for $model_name."
-    sbatch --array=0--256 --account=$CLUSTER_ACCOUNT --partition=$PARTITION --time=20	0:00 --output="TEMP/$model_name_expID_%a.out"source/run_experiments.sh $model_name 
+    sbatch --array=0-256 --account=$CLUSTER_ACCOUNT --partition=$PARTITION --time=200:00 --output="TEMP/${model_name_exp}_ID_%a.out" source/run_experiments.sh $model_name 
 done
 }
 

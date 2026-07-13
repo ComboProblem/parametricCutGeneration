@@ -21,7 +21,7 @@ model_path = f"model_files/{model_name}.mps"
 sol_path = f"solution_files/solutions/{model_name}/1/{model_name}.sol"
 exp_id = int(os.getenv("SLURM_ARRAY_TASK_ID"))
 scip_time = 2*60*60 # 2 hours in seconds
-logger.INFO(f"Model:{model_name}\n Experiment:{exp_id}")
+logger.info(f"Model:{model_name}\n Experiment:{exp_id}")
 
 cut_score_names = ['parallelism', 'cut_off_distance', 'violation', 'realitive_violation']
 trial_bkpts = [2**i for i in range(1,9)]
@@ -55,7 +55,6 @@ elif 0 <= exp_id <= 255:
     cut_score_index = int(bit_string[0:2], 2)
     number_breakpoints_index =  int(bit_string[2:5], 2)
     number_of_cuts_index =  int(bit_string[5:], 2)
-    logger.debug(f'{cut_score_index, number_breakpoints_index, number_of_cuts_index}')
     cpg_kwds = {'algorithm':'bkpt_as_param', 'cut_score':cut_score_names[cut_score_index],  'max_num_of_bkpts':trial_bkpts[number_breakpoints_index]}
     numb_cuts = trial_cuts[number_of_cuts_index]
     model = Model()
