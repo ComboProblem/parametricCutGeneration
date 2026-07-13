@@ -6,6 +6,8 @@ import json, logging, signal, time, os
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+functions_logger = logging.getLogger("cutgeneratingfunctionology.igp.functions")
+functions_logger.setLevel(logging.ERROR)
 
 def slurm_handler(signum, frame):
     print('Signal handler called with signal', signum)
