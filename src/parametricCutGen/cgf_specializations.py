@@ -175,13 +175,17 @@ def value_nnc_polyhedron_constraints(bkpt, f_index, val=None, *, coeff_type='int
         val = [Var(i) for i in range(n)]
     h = pwl_with_value_parameters_and_bkpts_fixed(bkpt, f_index)
     cons = []
-    cons.append(val[0] == 0)
-    cons.append(val[f_index] == 1)
+    cons.append( val[0] == 0 )
+    cons.append( val[f_index] == 1 )
     for i in range(1,n):
         try:
             cons.append( val[i] > 0 )
         except Exception as e:
-            cons.append( val[i] + epsilon >= 0)
+            if coeff_type == "int":
+                d = QQ(epsilon).denominator()
+                cons.append( int(d)*val[i] - int(d * epsilon) >= 0)
+            else:
+                cons.append( val[i] - epsilon >= 0 )
         cons.append( val[i] <= 1 )
     # Assumes minimality for the partially defined function.
     for linear_poly_expr in generate_type_1_vertices_continuous_expr(h):

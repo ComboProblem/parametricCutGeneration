@@ -3,6 +3,7 @@ LICENSE
 README.rst
 pyproject.toml
 requirements.txt
+run_cluster_experiments.sh
 setup.py
 tox.ini
 src/Experiments/readme.rst
@@ -31,7 +32,6 @@ src/parametricCutGen/cgf_specializations.py
 src/parametricCutGen/cut_generation_problem.py
 src/parametricCutGen/execptions.py
 src/parametricCutGen/pyscipopt_optimal_cut_generation.py
-src/parametricCutGen/run_trial.sh
 src/parametricCutGen/scipy_cgp_interface.py
 src/parametricCutGen.egg-info/PKG-INFO
 src/parametricCutGen.egg-info/SOURCES.txt

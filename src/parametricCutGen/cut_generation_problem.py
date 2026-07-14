@@ -36,13 +36,11 @@ def find_f_index(min_pwl):
     return min_pwl.end_points().index(find_f(min_pwl))
 
 
-def sparse_enough_breakpoints(bkpt_old, epsilon):
+def infer_mutliplicity_vector_and_proper_breakpoints(bkpt, epsilon):
     r"""
-    Considers the space PWL(*<=n) and finds a point breakpoint sequence bkpt
-    such that  ||bkpt_old - bkpt||_infty < epsilon and that  bkpt[i+1]-bkpt[i] > epsilon xor bkpt[i] = bkpt[i+1].
-    This implies that d((bkpt_old,f), (bktp,f))< espilon and bkpt is "sparse enough".
-
-    Picking epsilon to be a "correct value" models a maximum number of breakpoints in algorithms "bkpt_as_param" and "value_poly_lp".  
+    Deduces a multiplicity vector sum_{j=0}^{k-1} m_j of length k such that  in which |b_j - sum_{l=1}^m_j b_{j, epsilon_l}| < m_j * epsilon. 
+    
+    This gives the possiblity of at most 2k propper breakpoints in the solution of the cut generation problem. 
 
     INPUT:
     - breakpoint sequence
@@ -52,24 +50,81 @@ def sparse_enough_breakpoints(bkpt_old, epsilon):
 
     TESTS::
     >>> from parametricCutGen.cut_generation_problem import *
-    >>> sparse_enough_breakpoints([0, 10**-7, 4/5], 10**-6)
+    >>> infer_mutliplicity_vector_and_proper_breakpoints([0, 10**-7, 4/5], 10**-6)
     [0, 4/5]
     """
-    bkpt = list(tuple(bkpt_old)) # cheap way of deep copying lists
-    for i in range(len(bkpt)-1):
-        if abs(bkpt[i]) < epsilon:
-            bkpt[i] = 0
+    pbkpt = list(tuple(bkpt)) # cheap way of deep copying lists
+    for i in range(len(pbkpt)-1):
+        if abs(pbkpt[i]) < epsilon:
+            pbkpt[i] = 0
         # 1 equiv 0 mod 1
-        elif abs(bkpt[i] - 1) < epsilon:
-            bkpt[i] = 0
-        elif abs(bkpt[i] - bkpt[i+1]) < epsilon:
-            bkpt[i+1] = bkpt[i]
-    if abs(bkpt[len(bkpt)-1] -1) < epsilon or abs(bkpt[len(bkpt)-1])< epsilon:
-        bkpt[len(bkpt)-1] = 0
-    return bkpt
+        elif abs(pbkpt[i] - 1) < epsilon:
+            pbkpt[i] = 0
+        elif abs(pbkpt[i] - pbkpt[i+1]) < epsilon:
+            pbkpt[i+1] = pbkpt[i]
+    if abs(pbkpt[len(pbkpt)-1] -1) < epsilon or abs(pbkpt[len(pbkpt)-1])< epsilon:
+        pbkpt[len(pbkpt)-1] = 0
+    return pbkpt
+
+
+def symmetrize_about_f_mod_1(bkpt, f):
+    """
+    Add symmerties about f modulo 1.
+    Retun a list such for all i in bkpt, there exist a j with sym_bkpt[j] equiv bkpt[i] - f mod 1.
+    """
+    frac_f = fractional(QQ(f))
+    symmetrized_bkpts = [QQ(0), frac_f]
+    # symmertized breakpoints should all be in [0,1)
+    for b in bkpt:
+        sage_b = fractional(QQ(b))
+        b_sym = frac_f - sage_b
+        if b_sym > 0:
+            symmetrized_bkpts += [sage_b, b_sym]
+        elif b_sym < 0:
+            symmetrized_bkpts += [sage_b, 1+b_sym]
+    symmetrized_bkpts = unique_list(symmetrized_bkpts)
+    symmetrized_bkpts.sort()
+    return symmetrized_bkpts
+
+def value_parameter_manifold_constraints(bkpt, M, values=None, *, coeff_type='int', backend=None):
+    """Enforces restrictions of the chart in which optimization is occuring. Written in the value parameters."""
+    n = len(bkpt)
+    if backend == 'pplite':
+        Var = pplite_Variable
+    else:
+        Var = Variable
+    if values is None:
+        values = [Var(i) for i in range(n)]
+    cons = []
+    if coeff_type=='int':
+        M = QQ(M)
+        for i in range(n-1):
+            lcd = lcm([bkpt[i+1].denominator(), bkpt[i].denominator(), M.denominator()])
+            cons.append( int(lcd ) * (values[i+1] - values[i]) - int(lcd * M * (bkpt[i+1]-bkpt[i])) <= 0 )
+            cons.append( int(-1*lcd * M * (bkpt[i+1]-bkpt[i])) +  (-1*int(lcd) * (values[i+1] - values[i]))  <= 0 )
+        lcd = lcm(bkpt[n-1].denominator(),  M.denominator())
+        cons.append( int(lcd) * (1 - values[n-1]) - int(lcd * M* (1 - bkpt[n-1])) <= 0 )
+        cons.append( int(-1*lcd * M * (1 - bkpt[n-1])) + (-1* int(lcd )) * (1 - values[n-1]) <= 0 ) # correct
+    elif coeff_type=='float':
+        M=float(M)
+        for i in range(n-1):
+            cons.append( (values[i+1] - values[i]) - M* float(bkpt[i+1]-bkpt[i]) <= 0 )
+            cons.append( M* float(bkpt[i+1]-bkpt[i]) -  (values[i+1] - values[i])  <= 0 )
+        cons.append(  (1 - values[n-1]) - M * float(1 - bkpt[n-1]) <= 0 )
+        cons.append( M* float(1 - bkpt[n-1]) +  (-1 * (1 - values[n-1])) <= 0 )    
+    else:
+        M=QQ(M)
+        # bkpt is assumed to be sage rational type,
+        for i in range(n-1):
+            cons.append( (values[i+1] - values[i]) + (-1*M)* (bkpt[i+1]-bkpt[i]) <= 0 )
+            cons.append( M * (bkpt[i+1]-bkpt[i]) -  (values[i+1] - values[i])  <= 0 )
+        cons.append( (1 - values[n-1]) - M * (1 - bkpt[n-1]) <= 0 )
+        cons.append( M * float(1 - bkpt[n-1]) - (1 - values[n-1]) <= 0 )            
+    return cons    
 
 def inf_norm_of_cont_pwl(f, g):
     return max([abs(v) for v in (f-g).values_at_end_points()])
+
 
 def log_problem_result(bkpt, val, binvarow, binvc, f):
     cut_generation_problem_logger.info(f"Cut generation problem solved.")
@@ -84,21 +139,44 @@ def log_problem_result(bkpt, val, binvarow, binvc, f):
 
 class cutGenerationProblem:
     r"""
-    A class for solving a cut generation problem (cgp).
+    A class for solving a cut generation problem (cgp). 
     
-    The cut generation problem is defined as max cutScore(cut) s.t. cut in CutPool.
+    This class combines the manifold charts of the space of piecewise linear functions with the constraints on minimal functions to optimize cuts over the subspaces of minimal functions. 
+
+    A chart, phi: U -> PWL_{<=n} has a multiplicity vector, m, and a liptishitz constant, M, associated with it. 
+    The multiplicity vector is infrered by the parameter :epsilon:. 
+    The liptishitz constant M is defined by :M:.
+
+    The chart domain is intersected with the constraints of minimality.
     
-    cutSpace is defined by the algorithm chosen.
+    This gives a subset F of RR^n in which phi(F) <= PiMin_{<=} (containment). 
+
+    Assume MIP lp relaxation data is provided.
+    Define C_F as the set of cuts which there exists pi in phi(F) such that cut is defined by pi (as an interesction cut). 
+    F is specified by :algorithm:. 
+
+    Let s: C_F -> RR be a cut scoring hueristic and assume that s is C^2 on C_F. s is defined by :cut_score:.
+
+    A cut generation problem is defined as max s(c) s.t. c in C_F. 
+
+    The solution to a cut generating problem is reported as f in PWL_{<=n}. 
     
-    \"full\" correspond to the full space of cuts generated from PiMin<=max_num_of_bkpts.
+    Spaces of minimal functions:
+
+    VP_{b, f_index} - Value Polyhedron_{b, f_index} 
     
-    \"bkpt\_as\_param\" correspond the space of cuts generated by assuming breakpoints are parameters
-    and the cuts are generated from the value polyhedron of the breakpoints.
+    M - bigcup_(alpha in min function cache) S_alpha = {p in RR^k : pi_p is minimal if and only if pi_alpha is minial} 
+
+    :algorithm: parameter details.
+
+    \"full\" (In Development) Takes F=M. 
     
-    \"value_poly_lp" specialization of \"bkpt\_as\_param\" to linear functions. Using an LP solver rather
-    than a generic non linear solver and is in the ambient space of value parameters.
+    \"bkpt\_as\_param\" (alpha) Takes F = U cap VP_{b, b.index(f)}. 
+    The chart :epsilon: and the row data are used to detemine a viable multiplicity vector.
+    Symmetries about f=fractional(overline(b_i))) to ensure the VP_{b, b.index(f)} has dimension higher than 0.
     
-    The problem assumes that all minimal functions belong to a family (epsilon, M) charts.
+    \"value\_poly\_vert" (alpha) Takes F = vert(U cap VP_{b, b.index(f)}).
+    
 
     The cgp optional keywords are listed below.
 
@@ -113,13 +191,8 @@ class cutGenerationProblem:
     :prove_seperator: - bool, proves every function used is actually a function that can be used to generate a separator.
     :rel_tol: - real number >=0, stopping condition for solving cgp. If the distance between two solutions of the cgp is less than `rel_tol` then they are considered equal and the solver will halt and return the most recent solution.
     :show_proof: - bool, Outputs proof from `cutgeneratingfunctionology`.
-    
-    TESTS::
-    >>> from parametricCutGen.cut_generation_problem import *
-
     """
-    # *, makes arguments keyword only. Order shouldn't matter in terms of inputs. The problem will write it's own parameters into a cgp_params dict.
-    def __init__(self, *, algorithm=None, backend=None, cut_score=None,  epsilon=1e-6, M = 1e6, max_cgp_solver_time=None, max_num_of_bkpts=4, multithread=False, objective_sense="maximize", prove_seperator=False, show_proof=False, cvxpy_solve_args=None, cvxpy_solve_kwds=None, scipy_args=None, scipy_kwds=None):
+    def __init__(self, *, algorithm=None, backend=None, cut_score=None,  epsilon=1e-2, M = 1e6, max_cgp_solver_time=None, max_num_of_bkpts=4, multithread=False, objective_sense="maximize", prove_seperator=False, show_proof=False, cvxpy_solve_args=None, cvxpy_solve_kwds=None, scipy_args=None, scipy_kwds=None):
         """
         TESTS::
         >>> from parametricCutGen.cut_generation_problem import *
@@ -185,32 +258,13 @@ class cutGenerationProblem:
         """
         Solves the problem given a row of B^-1A and the reduced costs
         """
-        frac_f = fractional(QQ(f))
-        symmetrized_bkpts = [0, frac_f]
-        # symmertized breakpoints should all be in [0,1)
-        for b in binvarow:
-            sage_b = fractional(QQ(b))
-            b_sym = frac_f - sage_b
-            if b_sym > 0:
-                symmetrized_bkpts += [sage_b, b_sym]
-            elif b_sym < 0:
-                symmetrized_bkpts += [sage_b, 1+b_sym]
-        symmetrized_bkpts = unique_list(symmetrized_bkpts)
-        symmetrized_bkpts.sort()
-        # it might be worth while to ensure if we have sufficient difference between breakpoints.
-        model_sparsity = max(float(1/self._max_num_of_bkpts), self._epsilon)
-        sparse_bkpt = unique_list(sparse_enough_breakpoints(symmetrized_bkpts, model_sparsity))
-        if frac_f not in sparse_bkpt:
-            sparse_bkpt = [x for x in sparse_bkpt if abs(frac_f -x) > self._epsilon]
-            sparse_bkpt.append(frac_f)
-        num_bkpt = len(sparse_bkpt)
+        # Ensure numerical difference btween breakpoints
+        sparse_bkpt = infer_mutliplicity_vector_and_proper_breakpoints([QQ(b) for b in binvrow], self._epsilon)
+        bkpt = symmetrize_about_f_mod_1(sparse_bkpt, f)
+        n = len(bkpt)
         # ensure a breakpoint sequence is given
-        sparse_bkpt.sort()
-        sparse_bkpt = [QQ(b) for b in sparse_bkpt]    
-        f_index = sparse_bkpt.index(frac_f)
-        cut_generation_problem_logger.debug(f"sparse_bkpt={sparse_bkpt}\nf_index={f_index}")    
-        # to use scipy; we find an inital point via a polyhedron
-        n = len(sparse_bkpt)
+        f_index = bkpt .index(fractional(QQ(f)))
+        cut_generation_problem_logger.debug(f"bkpt={bkpt}\nf_index={f_index}")    
         #cut_generation_problem_logger.debug(f"gen poly")
         if self._backend == 'pplite':
             Value_Poly = pplite_NNC_Polyhedron(dim_type = n, spec_elem = "universe", topology = "nnc")
@@ -218,19 +272,23 @@ class cutGenerationProblem:
         else:
             Value_Poly = NNC_Polyhedron(n)
             bsa = BasicSemialgebraicSet_polyhedral_ppl_NNC_Polyhedron(n, Value_Poly)
-        value_cons = value_nnc_polyhedron_constraints(sparse_bkpt, f_index, backend=self._backend)
-        for con in value_cons:
+        value_cons = value_nnc_polyhedron_constraints(bkpt, f_index, backend=self._backend, epsilon=self._epsilon)
+        manifold_cons = value_parameter_manifold_constraints(bkpt, self._M, backend=self._backend)
+        cut_generation_problem_logger.debug(f"{manifold_cons, value_cons}")
+        for con in value_cons+manifold_cons:
             try:
                 #cut_generation_problem_logger.debug(f"{con, type(con)}")
                 Value_Poly.add_constraint(con)
             except Exception as e:
+                cut_generation_problem_logger.warning(f"constraint:{con} could not be added to value Polyhedron. Reason: {e}")
                 continue
+        
         #cut_generation_problem_logger.debug(f"find point")
         x0 = [float(x_i) for x_i in bsa.find_point()]
         scipy_cons = map_polyhedral_bsa_to_scipy_LinearConstraint(bsa, self._epsilon)
         #cut_generation_problem_logger.debug(f"solve")
         if scip is not None:
-            cutcoefs_expr, cutrhs_expr, integral_indices, lp_soln = self.getParamaterizedCutExpr(scip, cols, rows, binvrow, binvarow, f, sparse_bkpt, f_index)
+            cutcoefs_expr, cutrhs_expr, integral_indices, lp_soln = self.getParamaterizedCutExpr(scip, cols, rows, binvrow, binvarow, f, bkpt, f_index)
             s = self._cut_score_generator.gen_cut_score(f_index,  cutcoefs_expr, cutrhs_expr, lp_soln, costs, integral_indices)
             if self._objective_sense == "maximize":
                 def cut_score(value_parameters):
@@ -243,15 +301,14 @@ class cutGenerationProblem:
         result = scipy_minimize(cut_score, x0, constraints=scipy_cons)
         #cut_generation_problem_logger.debug(f"fin")
         score = result.fun
-        values = to_sage_rationals(result.x)
-        b = sparse_bkpt
-        v = values
+        b = bkpt
+        v = to_sage_rationals(result.x)
         pi_p = piecewise_function_from_breakpoints_and_values(b+[1], v+[0])
         log_problem_result(b, v, binvarow, costs, f)
         if self._prove_seperator:
             res = minimality_test(pi_p, self._show_proof) # add someway to log certificates.
             cut_generation_problem_logger.info(f"Minimality of cgf: {res}")
-        return pi_p, score, len(sparse_bkpt)
+        return pi_p, score, n
 
     def _algorithm_value_poly_lp(self, binvrow, binvarow, f, costs, cols=None, rows=None, scip=None):
         problem_timer = cgpTimer(self._max_cgp_solver_time)
@@ -269,9 +326,9 @@ class cutGenerationProblem:
         symmetrized_bkpts.sort()
         # it might be worth while to ensure if we have sufficient difference between breakpoints.
         model_sparsity = max(float(1/self._max_num_of_bkpts), self._epsilon)
-        sparse_bkpt = unique_list(sparse_enough_breakpoints(symmetrized_bkpts, model_sparsity))
+        sparse_bkpt = unique_list(infer_mutliplicity_vector_and_proper_breakpoints(symmetrized_bkpts, model_sparsity))
         if frac_f not in sparse_bkpt:
-            sparse_bkpt = [x for x in sparse_bkpt if abs(frac_f -x) > self._epsilon]
+            sparse_bkpt = [x for x in sparse_bkpt if abs(frac_f - x) > self._epsilon]
             sparse_bkpt.append(frac_f)
         num_bkpt = len(sparse_bkpt)
         # Ensure a breakpoint sequence is given.
