@@ -166,41 +166,58 @@ class cutGenerationProblem:
     VP_{b, f_index} - Value Polyhedron_{b, f_index} 
     
     M - bigcup_(alpha in min function cache) S_alpha = {p in RR^k : pi_p is minimal if and only if pi_alpha is minial} 
-
-    :algorithm: parameter details.
-
-    \"full\" (In Development) Takes F=M. 
     
-    \"bkpt\_as\_param\" (alpha) Takes F = U cap VP_{b, b.index(f)}. 
+    The cgp optional keywords are listed below.
+
+    :algorithm: - string
+    :backend: - `None` or string
+    :cut_score: - string
+    :epsilon: - types convertable to sage rational 
+    :M: -  types convertable to sage rational
+    :max_cgp_solver_time: - NotImplemented
+    :max_num_of_bkpts: - integer
+    :multithread: - NotImplemented
+    :prove_seperator: - bool
+    :rel_tol: NotImplemted
+    :show_proof: - bool
+    :solver_args: - dict
+    :solver_kwds: - dict
+    :enable_profiling: - bool
+
+    PARAMETER DETAILS
+
+    :algorithm: 
+
+    - \"full\" : (pre-alpha) Takes F=M. 
+    
+    - \"bkpt\_as\_param\" : (alpha) Takes F = U cap VP_{b, b.index(f)}. 
     The chart :epsilon: and the row data are used to detemine a viable multiplicity vector.
     Symmetries about f=fractional(overline(b_i))) to ensure the VP_{b, b.index(f)} has dimension higher than 0.
     
-    \"value\_poly\_vert" (alpha) Takes F = vert(U cap VP_{b, b.index(f)}).
+    - \"value\_poly\_vert" (alpha) Takes F = vert(U cap VP_{b, b.index(f)}).
+
+    :backend: 
+
+    - `None` : (stable) use ppl as a polyhedral backend for computations.
     
+    - \"pplite\" : (alpha) use pplite as a polyhedral backend for computations. 
 
-    The cgp optional keywords are listed below.
+    - \"cvxpy\" : use cvxpy as a polyedral backend for computations.
 
-    :algorithm: - str(full), str(bkpt_as_param), str(value_poly_lp)
-    :backend: - None or str(pplite)
-    :cut_store: - valid argument for initializing :class:`cutScore`
-    :epsilon: - Chart epsilon value, real number > 0. 
-    :M: -  Chart lipschitz constant, real number > 0.
-    :max_cgp_solver_time: - Optimal real clock time limit for solving problem. Takes positive values.
-    :max_num_of_bkpts: - integer >= 2, maximum number of breakpoints a minimal function is allowed to have.
-    :multithread: - bool, Not implemented, intended for "full" algorithm.
-    :prove_seperator: - bool, proves every function used is actually a function that can be used to generate a separator.
-    :rel_tol: - real number >=0, stopping condition for solving cgp. If the distance between two solutions of the cgp is less than `rel_tol` then they are considered equal and the solver will halt and return the most recent solution.
-    :show_proof: - bool, Outputs proof from `cutgeneratingfunctionology`.
+    :cut_score:
+
+    - \"parallelisim\" : s(cut) = <cut,obj>/||cut - obj||
+
+    - \" \" 
     """
-    def __init__(self, *, algorithm=None, backend=None, cut_score=None,  epsilon=1e-2, M = 1e6, max_cgp_solver_time=None, max_num_of_bkpts=4, multithread=False, objective_sense="maximize", prove_seperator=False, show_proof=False, cvxpy_solve_args=None, cvxpy_solve_kwds=None, scipy_args=None, scipy_kwds=None):
+    def __init__(self, *, algorithm=None, backend=None, cut_score=None,  epsilon=1e-2, M = 1e6, max_cgp_solver_time=None, max_num_of_bkpts=4, multithread=False, objective_sense="maximize", prove_seperator=False, show_proof=False,  solver_args={"cvxpy": None, "scipy": None}, solver_kwds={"cvxpy:" : "None", "scipy": None}, enable_profiling=False):
         """
         TESTS::
         >>> from parametricCutGen.cut_generation_problem import *
-        >>> cgp_full = cutGenerationProblem(algorithm="full", backend="pplite", cut_score="steepest_direction", max_num_of_bkpts=4)
-        >>> cgp_full_params_test = cgp_full.get_cgp_input_parameters()
-        >>> cgp_full_test = cutGenerationProblem(**cgp_full_params_test)
-        >>> cgp_full_test is cgp_full
+        >>> cgp = cutGenerationProblem()
         False
+        >>> cgp.get_cgp_input_parameters()
+        
         """
         self._cgp_input_parameters = {**locals()} # copy input parameters; only inital inputs here.
         self._cgp_input_parameters.pop("self") # This is required to ensure that when parameters are reused for initlaziation, problems doens't arise.
@@ -210,12 +227,13 @@ class cutGenerationProblem:
             raise ValueError("Objective senese should be either maximize or minimize.")
         if algorithm is None or algorithm.lower() == "full":
             self._algorithm = "full"
-#            if max_num_of_bkpts not in avail_rep_elems:
-#                cut_generation_problem_logger.warning(f"Function cache {max_num_of_bkpts} is not available; generation of functions at runtime is not advised.")
+            self._max_num_of_bktps = max_num_of_bkpts
+            if max_num_of_bkpts not in avail_rep_elems:
+                cut_generation_problem_logger.ERROR(f"Function cache {max_num_of_bkpts} is not available; generation of functions at runtime will have long runtime.")
         elif algorithm.lower() == "bkpt_as_param":
             self._algorithm = "bkpt_as_param"
-        elif algorithm.lower() == "value_poly_lp":
-            self._algorithm = "value_poly_lp"
+        elif algorithm.lower() == "value_poly_vert":
+            self._algorithm = "value_poly_vert"
         else:
             raise ValueError("No other algorithms are supported at this time.")
         self._cut_score_generator = scipyCutScoreForBkptAsParam(cut_score, epsilon, M)
@@ -226,11 +244,12 @@ class cutGenerationProblem:
         self._M = M
         self._max_cgp_solver_time = max_cgp_solver_time
         self._max_num_of_bkpts = max_num_of_bkpts
-        self._cvxpy_args = cvxpy_solve_args
-        self._cvxpy_kwds = cvxpy_solve_kwds
-        self._scipy_kewords = scipy_kwds
-        self._scipy_args = scipy_args
-        
+        self._solver_args = solver_args
+        self._solver_kwds = solver_kwds
+        self._enable_profiling = enable_profiling
+        if self._enable_profiling:
+            import cProfile
+            self._pr = cProfile.Profile()
     def __repr__(self):
         return f"Cut generation problem using algorithm {self._algorithm}."
 
@@ -241,12 +260,17 @@ class cutGenerationProblem:
 
         Passes any instructions to the underlying solver.
         """
+        if self._enable_profiling:
+            self._pr.enable()
         if self._algorithm == "full":
-            return self._algorithm_full_space(binvrow, binvarow, f, costs, cols, rows, scip)
+            result = self._algorithm_full_space(binvrow, binvarow, f, costs, cols, rows, scip)
         elif self._algorithm == "bkpt_as_param":
-            return self._algorithm_bkpt_as_param(binvrow, binvarow, f, costs, cols, rows, scip)
-        elif self._algorithm == "value_poly_lp":
-            return self._algorithm_value_poly_lp(binvrow, binvarow, f, costs, cols, rows, scip)
+            result = self._algorithm_bkpt_as_param(binvrow, binvarow, f, costs, cols, rows, scip)
+        elif self._algorithm == "value_poly_vert":
+            result = self._algorithm_value_poly_lp(binvrow, binvarow, f, costs, cols, rows, scip)
+        if self._enable_profiling:
+            self._pr.disable()
+        return result
 
     def _algorithm_full_space(self, binvrow, binvarow, f, costs, cols=None, rows=None, scip=None):
         r"""
@@ -266,6 +290,7 @@ class cutGenerationProblem:
         f_index = bkpt .index(fractional(QQ(f)))
         cut_generation_problem_logger.debug(f"bkpt={bkpt}\nf_index={f_index}")    
         #cut_generation_problem_logger.debug(f"gen poly")
+
         if self._backend == 'pplite':
             Value_Poly = pplite_NNC_Polyhedron(dim_type = n, spec_elem = "universe", topology = "nnc")
             bsa = BasicSemialgebraicSet_polyhedral_pplite_NNC_Polyhedron(n, Value_Poly)
@@ -282,11 +307,8 @@ class cutGenerationProblem:
             except Exception as e:
                 cut_generation_problem_logger.warning(f"constraint:{con} could not be added to value Polyhedron. Reason: {e}")
                 continue
-        
-        #cut_generation_problem_logger.debug(f"find point")
         x0 = [float(x_i) for x_i in bsa.find_point()]
         scipy_cons = map_polyhedral_bsa_to_scipy_LinearConstraint(bsa, self._epsilon)
-        #cut_generation_problem_logger.debug(f"solve")
         if scip is not None:
             cutcoefs_expr, cutrhs_expr, integral_indices, lp_soln = self.getParamaterizedCutExpr(scip, cols, rows, binvrow, binvarow, f, bkpt, f_index)
             s = self._cut_score_generator.gen_cut_score(f_index,  cutcoefs_expr, cutrhs_expr, lp_soln, costs, integral_indices)
@@ -310,6 +332,9 @@ class cutGenerationProblem:
             cut_generation_problem_logger.info(f"Minimality of cgf: {res}")
         return pi_p, score, n
 
+#        if self._backend == 'cvxpy':
+#            raise NotImplementedError("cvxpy backed not impemented")
+#
     def _algorithm_value_poly_lp(self, binvrow, binvarow, f, costs, cols=None, rows=None, scip=None):
         problem_timer = cgpTimer(self._max_cgp_solver_time)
         frac_f = fractional(QQ(f))
