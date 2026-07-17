@@ -16,6 +16,7 @@
     "src/parametricCutGen.egg-info/top_level.txt",
     "src/parametricCutGen.egg-info/dependency_links.txt",
     "src/Experiments/readme.rst",
+    "src/Experiments/run_single_experiment.sh",
     "src/Experiments/run_cluster_experiments.sh",
     "src/Experiments/Test/process_raw_data.sh",
     "src/Experiments/Test/data_collection_generation_test.py",

@@ -59,17 +59,18 @@ def check_for_gmics(paramed_cgfs):
 # think above levels and which primal heursitics are allowed; like rounding ect to find feasible solutions for relaxations proving relaxations ects. 
 # What is the parameters; 
 problem = "gen-ip016"
-num_bkpts = 2
+num_bkpts = 8
 cut_score_name = "parallelism"
 cuts_at_root = 1
 data = {}
 final_stats = {}
+profile=True
 model = Model()
 model.readProblem(filename=f"/home/acadia/Downloads/{problem}.mps")
 model.setParam("limits/time", 600)
 model.setSeparating(SCIP_PARAMSETTING.OFF)
 #logging.disable()
-sepa = OptimalCut(write_cgf_data=True, cgp_kwds={"algorithm" : "bkpt_as_param", "cut_score": cut_score_name , "epsilon":1/8, "M":1e6, "max_num_of_bkpts": num_bkpts, "backend":None, "enable_profiling":True})
+sepa = OptimalCut(write_cgf_data=True, cgp_kwds={"algorithm" : "bkpt_as_param", "cut_score": cut_score_name , "epsilon":1/16, "M":1e6, "max_num_of_bkpts": num_bkpts, "backend":None, "enable_profiling":profile, "backend_kwds":{"sage_mip":{"solver":"GLPK"}}})
 model.includeSepa(sepa, "optimal_cut", "optimal_cut test")
 model.setHeuristics(SCIP_PARAMSETTING.OFF)
 model.setPresolve(SCIP_PARAMSETTING.OFF)
@@ -106,15 +107,16 @@ model.writeStatistics(filename=f"{problem}.bkpt_as_param.{cut_score_name }.{num_
 default_solve_time = model.getSolvingTime()
 default_num_nodes = model.getNTotalNodes()
 final_stats["default"] = (default_solve_time, default_num_nodes)
-import cProfile, pstats, io
-from pstats import SortKey
-pr = sepa.cgp._pr
-s = io.StringIO()
-sortby = SortKey.CUMULATIVE
-ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
-ps.print_stats()
-print(s.getvalue())
-#print(data)
+if profile:
+    import cProfile, pstats, io
+    from pstats import SortKey
+    pr = sepa.cgp._pr
+    s = io.StringIO()
+    sortby = SortKey.CUMULATIVE
+    ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
+    ps.print_stats()
+    print(s.getvalue())
+    #print(data)
 #for l in [1,2,3,4,5]:
 #    for k in [2**i for i in range(1,5)]:
 #        model = Model()

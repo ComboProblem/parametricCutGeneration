@@ -13,12 +13,14 @@ import time
 
 
 cut_generation_problem_logger = logging.getLogger(__name__)
-cut_generation_problem_logger.setLevel(logging.ERROR)
+cut_generation_problem_logger.setLevel(logging.DEBUG)
 
 # minimal_exprction_cashe_logging = True
 
 #avail_rep_elems = minimal_exprction_cache_info()["avail_rep_elems"]
 
+#class breakpoint_sequence(list):
+#    pass
 
 # Helper functions/model enforcement
 
@@ -54,6 +56,7 @@ def infer_mutliplicity_vector_and_proper_breakpoints(bkpt, epsilon):
     [0, 4/5]
     """
     pbkpt = list(tuple(bkpt)) # cheap way of deep copying lists
+    pbkpt.sort()
     for i in range(len(pbkpt)-1):
         if abs(pbkpt[i]) < epsilon:
             pbkpt[i] = 0
@@ -86,41 +89,188 @@ def symmetrize_about_f_mod_1(bkpt, f):
     symmetrized_bkpts.sort()
     return symmetrized_bkpts
 
-def value_parameter_manifold_constraints(bkpt, M, values=None, *, coeff_type='int', backend=None):
-    """Enforces restrictions of the chart in which optimization is occuring. Written in the value parameters."""
+def PWL_with_bkpts_manifold_chart_constraints(bkpt, M, values=None, *, coeff_type=None, backend=None, feasiblity_problem=False, ring=QQ, backend_kwds={"sage_mip":{"solver":"GLPK", "maximization":True}}, backend_args={"sage_mip":{"mip":None}}):
+    """Defines constraints for U_{m, M}, the domain of the selected chart from the cut generation problem.
+
+    :bkpt: - list, a breakpoint sequence of elements of QQ.
+    
+    :M: - ring(M) in QQ. 
+
+    :ring:
+    - `sage.Ring`
+    - `None` -  
+    
+    :backend:
+    Speicfy the polyhedral backend. `None` is assumed to be ppl. 
+    - `None` - Var is ppl.Variable
+    - \"pplite\" - Var is pplite.Variable
+    - \"sage_mip\" - Var is sage.numerical.mip.MIPVariable
+    
+    :coeff_type:
+    :backend:'s' constraint coeffiecent type. 
+    Possible values:
+    - \'int\' - python.int
+    - \'float\' - python.float
+    - `None` - sage.Ring, default sage.Ring.Rings.Rational=QQ, not checked.
+
+    :feasiblity_problem: 
+    Write constriants for solving the feasiblity problem min  x_{n} st. x in set((U_{m,M},  x_{n}), x_{n} >=0).  
+    Possible Values:
+    - bool
+    """
+    n = len(bkpt)
+    if values is None:
+        if backend == 'pplite':
+            Var = pplite_Variable
+            coeff_type='int'
+            values = [Var(i) for i in range(n)]
+        elif backend == 'sage_mip':
+            if backend_args["sage_mip"]["mip"] is not None:
+                backend_args["sage_mip"]["mip"] = mip
+                values = mip.default_variable()
+                coeff_type='ring'
+            else:
+                raise ValueError("please provide a MixedIntegerProgram")
+        else:
+            Var = Variable
+            coeff_type='int'
+            values = [Var(i) for i in range(n)]
+    R=ring
+    
+    cons = []
+    if not feasiblity_problem:
+        # assert len(values) == n
+        if coeff_type=='int':
+            M = QQ(M)
+            for i in range(n-1):
+                lcd = lcm([bkpt[i+1].denominator(), bkpt[i].denominator(), M.denominator()])
+                cons.append( int(lcd ) * (values[i+1] - values[i]) - int(lcd * M * (bkpt[i+1]-bkpt[i])) <= 0 )
+                cons.append( int(-1*lcd * M * (bkpt[i+1]-bkpt[i])) +  (-1*int(lcd) * (values[i+1] - values[i]))  <= 0 )
+            lcd = lcm(bkpt[n-1].denominator(),  M.denominator())
+            cons.append( int(lcd) * (1 - values[n-1]) - int(lcd * M* (1 - bkpt[n-1])) <= 0 )
+            cons.append( int(-1*lcd * M * (1 - bkpt[n-1])) + (-1* int(lcd )) * (1 - values[n-1]) <= 0 ) # correct
+        elif coeff_type=='float':
+            M=float(M)
+            for i in range(n-1):
+                cons.append( (values[i+1] - values[i]) - M* float(bkpt[i+1]-bkpt[i]) <= 0 )
+                cons.append( M* float(bkpt[i+1]-bkpt[i]) -  (values[i+1] - values[i])  <= 0 )
+            cons.append(  (1 - values[n-1]) - M * float(1 - bkpt[n-1]) <= 0 )
+            cons.append( M* float(1 - bkpt[n-1]) +  (-1 * (1 - values[n-1])) <= 0 )    
+        else:
+            M=R(M)
+            # bkpt is assumed to be sage rational type,
+            for i in range(n-1):
+                cons.append( (values[i+1] - values[i]) + (-1*M)* (bkpt[i+1]-bkpt[i]) <= 0 )
+                cons.append( M * (bkpt[i+1]-bkpt[i]) -  (values[i+1] - values[i])  <= 0 )
+            cons.append( (1 - values[n-1]) - M * (1 - bkpt[n-1]) <= 0 )
+            cons.append( M * float(1 - bkpt[n-1]) - (1 - values[n-1]) <= 0 )
+    else:
+        # assert len(values) == (n+1)
+        cons.append(values[n] >= 0)
+        if coeff_type=='int':
+            M = QQ(M)
+            for i in range(n-1):
+                lcd = lcm([bkpt[i+1].denominator(), bkpt[i].denominator(), M.denominator()])
+                cons.append( int(lcd ) * (values[i+1] - values[i]) - int(lcd * M * (bkpt[i+1]-bkpt[i])) - values[n] <= 0 )
+                cons.append( int(-1*lcd * M * (bkpt[i+1]-bkpt[i])) +  (-1*int(lcd) * (values[i+1] - values[i])) - values[n] <= 0 )
+            lcd = lcm(bkpt[n-1].denominator(),  M.denominator())
+            cons.append( int(lcd) * (1 - values[n-1]) - int(lcd * M* (1 - bkpt[n-1])) - values[n] <= 0 )
+            cons.append( int(-1*lcd * M * (1 - bkpt[n-1])) + (-1* int(lcd )) * (1 - values[n-1]) - values[n] <= 0 ) # correct
+        elif coeff_type=='float':
+            M=float(M)
+            for i in range(n-1):
+                cons.append( (values[i+1] - values[i]) - M* float(bkpt[i+1]-bkpt[i]) - values[n] <= 0 )
+                cons.append( M* float(bkpt[i+1]-bkpt[i]) -  (values[i+1] - values[i]) - values[n]  <= 0 )
+            cons.append(  (1 - values[n-1]) - M * float(1 - bkpt[n-1]) - values[n] <= 0 )
+            cons.append(-1* M* float(1 - bkpt[n-1]) +  (- 1 + values[n-1]) - values[n] <= 0 )    
+        else:
+            M=R(M)
+            for i in range(n-1):
+                cons.append( (values[i+1] - values[i]) + (-1*M)* (bkpt[i+1]-bkpt[i]) - values[n] <= 0 )
+                cons.append( M * (bkpt[i+1]-bkpt[i]) -  (values[i+1] - values[i]) - values[n] <= 0 )
+            cons.append( (1 - values[n-1]) - M * (1 - bkpt[n-1]) - values[n] <= 0 )
+            cons.append(-1* M * (1 - bkpt[n-1]) + (-1 + values[n-1]) - values[n] <= 0 )
+    return cons
+
+def find_feasible_point(bkpt, M, f_index,  *, \
+    coeff_type='int', epsilon=1e-9, backend=None, \
+    ring=QQ, backend_kwds={"sage_mip":{"solver":"GLPK", "maximization":True}}, \
+    backend_args={"sage_mip":{"mip":None}}):
+    """
+    find x0 in VP_bkpt,f_index cap U_{m, M} where m is the multiplcity vector of bkpt.
+
+    See doc strings of value_nnc_polyhedron_constraints and PWL_with_bkpts_manifold_chart_constraints for 
+
+    x0 - np.array of dtype=float of shape (n,)
+    """
+    n = len(bkpt)
+    if backend == 'pplite' or backend == None:
+        if backend == 'pplite':
+            Value_Poly = pplite_NNC_Polyhedron(dim_type = n, spec_elem = "universe", topology = "nnc")
+            bsa = BasicSemialgebraicSet_polyhedral_pplite_NNC_Polyhedron(n, Value_Poly)
+            values = [pplite_Variable(i) for i in range(n)]
+        else:
+            Value_Poly = NNC_Polyhedron(n)
+            bsa = BasicSemialgebraicSet_polyhedral_ppl_NNC_Polyhedron(n, Value_Poly)
+            values = [Variable(i) for i in range(n)]
+        minimality_cons = value_nnc_polyhedron_constraints(bkpt, f_index, values, epsilon=epsilon, coeff_type='int')
+        manifold_cons = PWL_with_bkpts_manifold_chart_constraints(bkpt, M, values, coeff_type='int')
+        for con in minimality_cons+manifold_cons:
+            try:
+                Value_Poly.add_constraint(con)
+            except Exception as e:
+                cut_generation_problem_logger.warning(f"constraint:{con} could not be added to value Polyhedron. Reason: {e}")
+                continue
+        x0 = bsa.find_point()
+    elif backend == 'sage_mip' or backend=='cvxpy':
+        if backend == 'sage_mip':
+            bsa = BasicSemialgebraicSet_polyhedral_MixedIntegerLinearProgram(QQ, n+1, solver=backend_kwds["sage_mip"]["solver"])
+            values = list(bsa.mip_gens())
+            lp = bsa.mip() # has method.add_constraint
+            lp.set_objective(-1*values[n]) # The value polyhedron is always feasible. 
+            minimality_cons_feasiblity_problem = value_nnc_polyhedron_constraints(bkpt, f_index, values, epsilon=epsilon, coeff_type='ring', feasiblity_problem=True)
+            manifold_cons_feasiblity_problem = PWL_with_bkpts_manifold_chart_constraints(bkpt, M, values, coeff_type='ring', feasiblity_problem=True)
+            for con in minimality_cons_feasiblity_problem+manifold_cons_feasiblity_problem:
+                try:
+                    lp.add_constraint(con)
+                except Exception as e:
+                    cut_generation_problem_logger.warning(f"constraint:{con} could not be added to value Polyhedron. Reason: {e}")
+                    continue
+            cut_generation_problem_logger.debug(f"constraints:{minimality_cons_feasiblity_problem+manifold_cons_feasiblity_problem}")
+            lp.solve()
+            x0 = lp.get_values(values)[:-1]
+        elif backend == 'cvxpy':
+            values = cvxpy_Variable(n+1)
+            minimality_cons = value_nnc_polyhedron_constraints(bkpt, f_index, values, epsilon=epsilon, coeff_type='float', feasiblity_problem=True)
+            manifold_cons = PWL_with_bkpts_manifold_chart_constraints(bkpt, M, values, coeff_type='float', feasiblity_problem=True)
+            obj = cvxpy_Minimize(values[n])
+            prob = cvxpy_Problem(obj, minimality_cons+manifold_cons)
+            result=prob.solve()
+            print(result)
+            x0 = list(values.value)[:-1]
+    else:
+        raise ValueError("specify a valid backend for the feasiblity problem")
+    return np.array([float(xi) for xi in x0])
+
+def write_cgp_constraints(bkpt, M, f_index,  *, epsilon=1e-9, backend=None):
     n = len(bkpt)
     if backend == 'pplite':
-        Var = pplite_Variable
+        Value_Poly = pplite_NNC_Polyhedron(dim_type = n, spec_elem = "universe", topology = "nnc")
+        bsa = BasicSemialgebraicSet_polyhedral_pplite_NNC_Polyhedron(n, Value_Poly)
+        values = [pplite_Variable(i) for i in range(n)]
     else:
-        Var = Variable
-    if values is None:
-        values = [Var(i) for i in range(n)]
-    cons = []
-    if coeff_type=='int':
-        M = QQ(M)
-        for i in range(n-1):
-            lcd = lcm([bkpt[i+1].denominator(), bkpt[i].denominator(), M.denominator()])
-            cons.append( int(lcd ) * (values[i+1] - values[i]) - int(lcd * M * (bkpt[i+1]-bkpt[i])) <= 0 )
-            cons.append( int(-1*lcd * M * (bkpt[i+1]-bkpt[i])) +  (-1*int(lcd) * (values[i+1] - values[i]))  <= 0 )
-        lcd = lcm(bkpt[n-1].denominator(),  M.denominator())
-        cons.append( int(lcd) * (1 - values[n-1]) - int(lcd * M* (1 - bkpt[n-1])) <= 0 )
-        cons.append( int(-1*lcd * M * (1 - bkpt[n-1])) + (-1* int(lcd )) * (1 - values[n-1]) <= 0 ) # correct
-    elif coeff_type=='float':
-        M=float(M)
-        for i in range(n-1):
-            cons.append( (values[i+1] - values[i]) - M* float(bkpt[i+1]-bkpt[i]) <= 0 )
-            cons.append( M* float(bkpt[i+1]-bkpt[i]) -  (values[i+1] - values[i])  <= 0 )
-        cons.append(  (1 - values[n-1]) - M * float(1 - bkpt[n-1]) <= 0 )
-        cons.append( M* float(1 - bkpt[n-1]) +  (-1 * (1 - values[n-1])) <= 0 )    
-    else:
-        M=QQ(M)
-        # bkpt is assumed to be sage rational type,
-        for i in range(n-1):
-            cons.append( (values[i+1] - values[i]) + (-1*M)* (bkpt[i+1]-bkpt[i]) <= 0 )
-            cons.append( M * (bkpt[i+1]-bkpt[i]) -  (values[i+1] - values[i])  <= 0 )
-        cons.append( (1 - values[n-1]) - M * (1 - bkpt[n-1]) <= 0 )
-        cons.append( M * float(1 - bkpt[n-1]) - (1 - values[n-1]) <= 0 )            
-    return cons    
+        Value_Poly = NNC_Polyhedron(n)
+        bsa = BasicSemialgebraicSet_polyhedral_ppl_NNC_Polyhedron(n, Value_Poly)
+        values = [Variable(i) for i in range(n)]
+    minimality_cons = value_nnc_polyhedron_constraints(bkpt, f_index, values, epsilon=epsilon, coeff_type='int')
+    manifold_cons = PWL_with_bkpts_manifold_chart_constraints(bkpt, M, values, coeff_type='int')
+    for con in minimality_cons+manifold_cons:
+        try:
+            Value_Poly.add_constraint(con)
+        except Exception as e:
+            cut_generation_problem_logger.warning(f"constraint:{con} could not be added to value Polyhedron. Reason: {e}")
+            continue
+    return bsa
 
 def inf_norm_of_cont_pwl(f, g):
     return max([abs(v) for v in (f-g).values_at_end_points()])
@@ -202,7 +352,7 @@ class cutGenerationProblem:
     
     - \"pplite\" : (alpha) use pplite as a polyhedral backend for computations. 
 
-    - \"cvxpy\" : use cvxpy as a polyedral backend for computations.
+    - \"sage_mip\" : (stable) use sagemaths `MixedIntegerProgram` class a sa polyhedral backend for computations.
 
     :cut_score:
 
@@ -210,7 +360,7 @@ class cutGenerationProblem:
 
     - \" \" 
     """
-    def __init__(self, *, algorithm=None, backend=None, cut_score=None,  epsilon=1e-2, M = 1e6, max_cgp_solver_time=None, max_num_of_bkpts=4, multithread=False, objective_sense="maximize", prove_seperator=False, show_proof=False,  solver_args={"cvxpy": None, "scipy": None}, solver_kwds={"cvxpy:" : "None", "scipy": None}, enable_profiling=False):
+    def __init__(self, *, algorithm=None, backend=None, cut_score=None,  epsilon=1e-2, M = 1e6, max_cgp_solver_time=None, max_num_of_bkpts=4, multithread=False, objective_sense="maximize", prove_seperator=False, show_proof=False,  solver_args={"cvxpy": None, "scipy": None}, solver_kwds={"cvxpy:" : None, "scipy": None}, backend_kwds={"sage_mip":{"solver":"GLPK"}},  enable_profiling=False):
         """
         TESTS::
         >>> from parametricCutGen.cut_generation_problem import *
@@ -246,6 +396,7 @@ class cutGenerationProblem:
         self._max_num_of_bkpts = max_num_of_bkpts
         self._solver_args = solver_args
         self._solver_kwds = solver_kwds
+        self._backend_kwds= backend_kwds
         self._enable_profiling = enable_profiling
         if self._enable_profiling:
             import cProfile
@@ -283,32 +434,17 @@ class cutGenerationProblem:
         Solves the problem given a row of B^-1A and the reduced costs
         """
         # Ensure numerical difference btween breakpoints
-        sparse_bkpt = infer_mutliplicity_vector_and_proper_breakpoints([QQ(b) for b in binvrow], self._epsilon)
+        sparse_bkpt = unique_list(infer_mutliplicity_vector_and_proper_breakpoints([fractional(QQ(b)) for b in binvrow], self._epsilon))
+        sparse_bkpt.sort()
         bkpt = symmetrize_about_f_mod_1(sparse_bkpt, f)
         n = len(bkpt)
         # ensure a breakpoint sequence is given
         f_index = bkpt .index(fractional(QQ(f)))
-        cut_generation_problem_logger.debug(f"bkpt={bkpt}\nf_index={f_index}")    
+        cut_generation_problem_logger.debug(f"bkpt={bkpt}\nsparce_bkpt={sparse_bkpt}\nf_index={f_index}")    
         #cut_generation_problem_logger.debug(f"gen poly")
-
-        if self._backend == 'pplite':
-            Value_Poly = pplite_NNC_Polyhedron(dim_type = n, spec_elem = "universe", topology = "nnc")
-            bsa = BasicSemialgebraicSet_polyhedral_pplite_NNC_Polyhedron(n, Value_Poly)
-        else:
-            Value_Poly = NNC_Polyhedron(n)
-            bsa = BasicSemialgebraicSet_polyhedral_ppl_NNC_Polyhedron(n, Value_Poly)
-        value_cons = value_nnc_polyhedron_constraints(bkpt, f_index, backend=self._backend, epsilon=self._epsilon)
-        manifold_cons = value_parameter_manifold_constraints(bkpt, self._M, backend=self._backend)
-        cut_generation_problem_logger.debug(f"{manifold_cons, value_cons}")
-        for con in value_cons+manifold_cons:
-            try:
-                #cut_generation_problem_logger.debug(f"{con, type(con)}")
-                Value_Poly.add_constraint(con)
-            except Exception as e:
-                cut_generation_problem_logger.warning(f"constraint:{con} could not be added to value Polyhedron. Reason: {e}")
-                continue
-        x0 = [float(x_i) for x_i in bsa.find_point()]
-        scipy_cons = map_polyhedral_bsa_to_scipy_LinearConstraint(bsa, self._epsilon)
+        x0 = find_feasible_point(bkpt, self._M, f_index, backend=self._backend, backend_kwds=self._backend_kwds)
+        bsa = write_cgp_constraints(bkpt, self._M, f_index, backend=self._backend)
+        scipy_cons = map_polyhedral_bsa_to_scipy_LinearConstraint(bsa)
         if scip is not None:
             cutcoefs_expr, cutrhs_expr, integral_indices, lp_soln = self.getParamaterizedCutExpr(scip, cols, rows, binvrow, binvarow, f, bkpt, f_index)
             s = self._cut_score_generator.gen_cut_score(f_index,  cutcoefs_expr, cutrhs_expr, lp_soln, costs, integral_indices)
@@ -363,7 +499,7 @@ class cutGenerationProblem:
         f_index = sparse_bkpt.index(frac_f)
         # lets use cvxpy to solve the problem directly
         cvxpy_vals = cvxpy_Variable(len(sparse_bkpt)) # aka the values
-        value_cons = value_nnc_polyhedron_constraints(sparse_bkpt, f_index, cvxpy_vals, coeff_type='float', epsilon=self._epsilon)
+        minimality_cons = value_nnc_polyhedron_constraints(sparse_bkpt, f_index, cvxpy_vals, coeff_type='float', epsilon=self._epsilon)
         
         map_sage_expr_to_cvpxy_expr = lambda expr : sum( float(expr.coefficient(expr.parent().gens_dict()['gamma'+str(i)]))*cvxpy_vals[i] + float(expr.constant_coefficient()) for i in range(num_bkpt) )
         # data from scip is being passed in
@@ -380,7 +516,7 @@ class cutGenerationProblem:
             obj = cvxpy_Maximize(steepest_dir_expr)
         else:
             obj = cvxpy_Minimize(steepest_dir_expr)
-        prob = cvxpy_Problem(obj, value_cons)
+        prob = cvxpy_Problem(obj, minimality_cons)
         if self._cvxpy_args is None and self._cvxpy_kwds is None:
             prob.solve()
         elif self._cvxpy_args is None and self._cvxpy_kwds is not None:

@@ -118,7 +118,7 @@ def generate_symmetric_vertices_continuous_expr(fn, f):
             y = 1 + f - x
         yield fn(x) + fn(y) 
 
-def value_nnc_polyhedron_constraints(bkpt, f_index, val=None, *, coeff_type='int', epsilon=.00000000001, log_pw_functions=False, backend=None):
+def value_nnc_polyhedron_constraints(bkpt, f_index, values=None, *, coeff_type='int', epsilon=.00000000001, log_pw_functions=False, backend=None, feasiblity_problem=False, ring=QQ):
     r"""
     Returns a list of constraints, possibiely evaluated, representing the value polyhedron for the given (proper) breakpoint sequence, f index, and values.
 
@@ -167,58 +167,111 @@ def value_nnc_polyhedron_constraints(bkpt, f_index, val=None, *, coeff_type='int
     assert(f_index >= 1)
     assert(f_index <= n - 1)
     coord_names = ['gamma'+str(i) for i in range(n)]
-    if backend == 'pplite':
-        Var = pplite_Variable
+    if values is None:
+        if backend == 'pplite':
+            Var = pplite_Variable
+            coeff_type = 'int'
+            values = [Var(i) for i in range(n)]
+        elif backend == 'sage_mip':
+            if backend_args["sage_mip"]["mip"] is not None:
+                backend_args["sage_mip"]["mip"] = mip
+                values = mip.default_variable()
+                coeff_type = 'ring'
+            else:
+                raise ValueError("please provide a MixedIntegerProgram")
+        else:
+            Var = Variable
+            coeff_type = 'int'
+            values = [Var(i) for i in range(n)]
+    if ring is not None:
+        R=ring
     else:
-        Var = Variable
-    if val is None:
-        val = [Var(i) for i in range(n)]
+        R=QQ
     h = pwl_with_value_parameters_and_bkpts_fixed(bkpt, f_index)
     cons = []
-    cons.append( val[0] == 0 )
-    cons.append( val[f_index] == 1 )
+    cons.append( values[0] == 0 )
+    cons.append( values[f_index] == 1 )
     for i in range(1,n):
         try:
-            cons.append( val[i] > 0 )
+            cons.append( values[i] > 0 )
         except Exception as e:
             if coeff_type == "int":
                 d = QQ(epsilon).denominator()
-                cons.append( int(d)*val[i] - int(d * epsilon) >= 0)
+                cons.append( int(d)*values[i] - int(d * epsilon) >= 0)
+            elif coeff_type == "float":
+                cons.append( values[i] - float(epsilon) >= 0 )
             else:
-                cons.append( val[i] - epsilon >= 0 )
-        cons.append( val[i] <= 1 )
+                cons.append( values[i] - float(epsilon) >= 0 )
+        cons.append( values[i] <= 1 )
     # Assumes minimality for the partially defined function.
-    for linear_poly_expr in generate_type_1_vertices_continuous_expr(h):
-        cgf_special_logger.debug(f"expr:{linear_poly_expr}, type:{type(linear_poly_expr)}")
-        lhs = [linear_poly_expr.coefficient(linear_poly_expr.parent().gens_dict()[name]) for name in coord_names]
-        cst = linear_poly_expr.constant_coefficient()
-        if coeff_type == "int":
-            lcd = lcm(lcm([coeff.denominator() for coeff in lhs]), cst.denominator())
-            cons.append(sum([int(lcd * lhs[i]) * val[i] for i in range(n)]) + int(lcd * cst) >= 0)
-        elif coeff_type == "float":
-            cons.append(sum([float(lhs[i]) * val[i] for i in range(n)]) + float(cst) >= 0)
-        else: #sage rational type assumed
-            cons.append(sum([lhs[i] * val[i] for i in range(n)]) + float(cst) >= 0)
-    for linear_poly_expr in generate_type_2_vertices_continuous_expr(h):
-        lhs = [linear_poly_expr.coefficient(linear_poly_expr.parent().gens_dict()[name]) for name in coord_names]
-        cst = linear_poly_expr.constant_coefficient()
-        if coeff_type == "int":
-            lcd = lcm(lcm([coeff.denominator() for coeff in lhs]),  cst.denominator())
-            cons.append(sum([int(lcd * lhs[i]) * val[i] for i in range(n)]) + int(lcd * cst) >= 0)
-        elif coeff_type == "float":
-            cons.append(sum([float(lhs[i]) * val[i] for i in range(n)]) + float(cst) >= 0)
-        else: #sage rational type assumed
-            cons.append(sum( [lhs[i] * val[i] for i in range(n)]) + float(cst) >= 0)
-    for linear_poly_expr in generate_symmetric_vertices_continuous_expr(h, bkpt[f_index]):
-        lhs = [linear_poly_expr.coefficient(linear_poly_expr.parent().gens_dict()[name]) for name in coord_names]
-        cst = linear_poly_expr.constant_coefficient()
-        if coeff_type == "int":
-            lcd = lcm(lcm([coeff.denominator() for coeff in lhs]), cst.denominator())
-            cons.append(sum([int(lcd * lhs[i]) * val[i] for i in range(n)]) + int(lcd * cst) == 1*lcd)
-        elif coeff_type == "float":
-            cons.append(sum([float(lhs[i]) * val[i] for i in range(n)]) + float(cst) == 1)
-        else: #sage rational type assumed
-            cons.append(sum([lhs[i] * val[i] for i in range(n)]) + float(cst) == 1)
+    if not feasiblity_problem:
+        for linear_poly_expr in generate_type_1_vertices_continuous_expr(h):
+            cgf_special_logger.debug(f"expr:{linear_poly_expr}, type:{type(linear_poly_expr)}")
+            lhs = [linear_poly_expr.coefficient(linear_poly_expr.parent().gens_dict()[name]) for name in coord_names]
+            cst = linear_poly_expr.constant_coefficient()
+            if coeff_type == "int":
+                lcd = lcm(lcm([coeff.denominator() for coeff in lhs]), cst.denominator())
+                cons.append(sum([int(lcd * lhs[i]) * values[i] for i in range(n)]) + int(lcd * cst) >= 0)
+            elif coeff_type == "float":
+                cons.append(sum([float(lhs[i]) * values[i] for i in range(n)]) + float(cst) >= 0)
+            else: #sage rational type assumed
+                cons.append(sum([lhs[i] * values[i] for i in range(n)]) + float(cst) >= 0)
+        for linear_poly_expr in generate_type_2_vertices_continuous_expr(h):
+            lhs = [linear_poly_expr.coefficient(linear_poly_expr.parent().gens_dict()[name]) for name in coord_names]
+            cst = linear_poly_expr.constant_coefficient()
+            if coeff_type == "int":
+                lcd = lcm(lcm([coeff.denominator() for coeff in lhs]),  cst.denominator())
+                cons.append(sum([int(lcd * lhs[i]) * values[i] for i in range(n)]) + int(lcd * cst) >= 0)
+            elif coeff_type == "float":
+                cons.append(sum([float(lhs[i]) * values[i] for i in range(n)]) + float(cst) >= 0)
+            else: #sage rational type assumed
+                cons.append(sum( [lhs[i] * values[i] for i in range(n)]) + float(cst) >= 0)
+        for linear_poly_expr in generate_symmetric_vertices_continuous_expr(h, bkpt[f_index]):
+            lhs = [linear_poly_expr.coefficient(linear_poly_expr.parent().gens_dict()[name]) for name in coord_names]
+            cst = linear_poly_expr.constant_coefficient()
+            if coeff_type == "int":
+                lcd = lcm(lcm([coeff.denominator() for coeff in lhs]), cst.denominator())
+                cons.append(sum([int(lcd * lhs[i]) * values[i] for i in range(n)]) + int(lcd * cst) == 1*lcd)
+            elif coeff_type == "float":
+                cons.append(sum([float(lhs[i]) * values[i] for i in range(n)]) + float(cst) == 1)
+            else: #sage rational type assumed
+                cons.append(sum([lhs[i] * values[i] for i in range(n)]) + float(cst) == 1)
+    else:
+        # assert len(values) == n+1
+        cons.append(values[n] >= 0)
+        for linear_poly_expr in generate_type_1_vertices_continuous_expr(h):
+            cgf_special_logger.debug(f"expr:{linear_poly_expr}, type:{type(linear_poly_expr)}")
+            lhs = [linear_poly_expr.coefficient(linear_poly_expr.parent().gens_dict()[name]) for name in coord_names]
+            cst = linear_poly_expr.constant_coefficient()
+            if coeff_type == "int":
+                lcd = lcm(lcm([coeff.denominator() for coeff in lhs]), cst.denominator())
+                cons.append(sum([int(lcd * lhs[i]) * values[i] for i in range(n)]) + int(lcd * cst) + values[n] >= 0)
+            elif coeff_type == "float":
+                cons.append(sum([float(lhs[i]) * values[i] for i in range(n)]) + float(cst) + values[n] >= 0)
+            else: #sage rational type assumed
+                cons.append(sum([lhs[i] * values[i] for i in range(n)]) + float(cst) + values[n] >= 0)
+        for linear_poly_expr in generate_type_2_vertices_continuous_expr(h):
+            lhs = [linear_poly_expr.coefficient(linear_poly_expr.parent().gens_dict()[name]) for name in coord_names]
+            cst = linear_poly_expr.constant_coefficient()
+            if coeff_type == "int":
+                lcd = lcm(lcm([coeff.denominator() for coeff in lhs]),  cst.denominator())
+                cons.append(sum([int(lcd * lhs[i]) * values[i] for i in range(n)]) + int(lcd * cst) + values[n] >= 0)
+            elif coeff_type == "float":
+                cons.append(sum([float(lhs[i]) * values[i] for i in range(n)]) + float(cst) + values[n] >= 0)
+            else: #sage rational type assumed
+                cons.append(sum( [lhs[i] * values[i] for i in range(n)]) + float(cst) + values[n] >= 0)
+        for linear_poly_expr in generate_symmetric_vertices_continuous_expr(h, bkpt[f_index]):
+            lhs = [linear_poly_expr.coefficient(linear_poly_expr.parent().gens_dict()[name]) for name in coord_names]
+            cst = linear_poly_expr.constant_coefficient()
+            if coeff_type == "int":
+                lcd = lcm(lcm([coeff.denominator() for coeff in lhs]), cst.denominator())
+                cons.append(sum([int(lcd * lhs[i]) * values[i] for i in range(n)]) + int(lcd * cst) + values[n] == 1*lcd)
+            elif coeff_type == "float":
+                cons.append(sum([float(lhs[i]) * values[i] for i in range(n)]) + float(cst) + values[n] == 1)
+            else: #sage rational type assumed
+                cons.append(sum([lhs[i] * values[i] for i in range(n)]) + float(cst) + values[n] == 1)
+
+
     if not log_pw_functions:
         logging.getLogger("cutgeneratingfunctionology.igp.functions").setLevel(pw_logging_level)
     return cons

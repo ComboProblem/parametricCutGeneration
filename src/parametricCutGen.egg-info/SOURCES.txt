@@ -8,6 +8,7 @@ setup.py
 tox.ini
 src/Experiments/readme.rst
 src/Experiments/run_cluster_experiments.sh
+src/Experiments/run_single_experiment.sh
 src/Experiments/Test/data_collection_generation_test.py
 src/Experiments/Test/process_raw_data.sh
 src/Experiments/notes/README.rst
