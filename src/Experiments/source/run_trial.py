@@ -22,12 +22,12 @@ model_name = os.getenv("MODEL_NAME")
 model_path = f"model_files/{model_name}.mps"
 sol_path = f"solution_files/solutions/{model_name}/1/{model_name}.sol"
 exp_id = int(os.getenv("SLURM_ARRAY_TASK_ID"))
-scip_time = 2*60*60 # 2 hours in seconds
+scip_time = 3*60*60 # 3 hours in seconds
 logger.info(f"Model:{model_name}\n Experiment:{exp_id}")
 
 cut_score_names = ['parallelism', 'cut_off_distance', 'violation', 'realitive_violation']
-trial_bkpts = [2**i for i in range(1,9)]
-trial_cuts = [i for i in range(1,9)]
+trial_eps_denom = [2*i for i in range(1,17)]
+trial_cuts = [1]
 
 def sage_rational_to_json(obj):
     if isinstance(obj, sage.rings.rational.Rational):
@@ -35,7 +35,9 @@ def sage_rational_to_json(obj):
     raise TypeError(f'Cannot serialize object of {type(obj)}')
 
 #try:
-if exp_id == 256:
+bits_for_id = 6
+
+if exp_id == 2**bits_for_id:
     model = Model()
     model.readProblem(filename=model_path)
     model.setParam("limits/time", scip_time)
@@ -52,12 +54,12 @@ if exp_id == 256:
     with open(f"data/{model_name}.no_cuts.txt", 'w') as data_file:
         json.dump(model.data, data_file, default=sage_rational_to_json)
     
-elif 0 <= exp_id <= 255:
-    bit_string =  '0'*(8-exp_id.bit_length()) + bin(exp_id)[2:]
+elif 0 <= exp_id <= 2**bits_for_id-1:
+    bit_string =  '0'*(bits_for_id-exp_id.bit_length()) + bin(exp_id)[2:]
     cut_score_index = int(bit_string[0:2], 2)
-    number_breakpoints_index =  int(bit_string[2:5], 2)
-    number_of_cuts_index =  int(bit_string[5:], 2)
-    cpg_kwds = {'algorithm':'bkpt_as_param', 'cut_score':cut_score_names[cut_score_index],  'max_num_of_bkpts':trial_bkpts[number_breakpoints_index]}
+    esp_index =  int(bit_string[2:], 2)
+    number_of_cuts_index = 0 #int(bit_string[5:], 2)
+    cpg_kwds = {'algorithm':'bkpt_as_param', 'backend':'pplite', 'cut_score':cut_score_names[cut_score_index],  "epsilon": 1/trial_eps_denom[esp_index], "M":1e6}
     numb_cuts = trial_cuts[number_of_cuts_index]
     model = Model()
     model.readProblem(filename=model_path)
@@ -75,8 +77,8 @@ elif 0 <= exp_id <= 255:
     model=record_data(model)
     model.redirectOutput()
     model.optimize()
-    model.writeStatistics(f"data/{model_name}.bkpt_as_param.{cut_score_names[cut_score_index]}.{trial_bkpts[number_breakpoints_index]}.{numb_cuts}.stats.json")
-    with open(f"data/{model_name}.bkpt_as_param.{cut_score_names[cut_score_index]}.{trial_bkpts[number_breakpoints_index]}.{numb_cuts}.txt", 'w') as data_file:
+    model.writeStatistics(f"data/{model_name}.bkpt_as_param.{cut_score_names[cut_score_index]}.{trial_eps_denom[esp_index]}.{numb_cuts}.stats.json")
+    with open(f"data/{model_name}.bkpt_as_param.{cut_score_names[cut_score_index]}.{trial_eps_denom[esp_index]}.{numb_cuts}.txt", 'w') as data_file:
         json.dump(model.data, data_file, default=sage_rational_to_json)
     
 #elif exp_id > 255:
@@ -84,7 +86,7 @@ elif 0 <= exp_id <= 255:
 #    bit_string =  '0'*(6-exp_id.bit_length()) + bin(exp_id)[2:]
 #    number_breakpoints_index =  int(bit_string[0:3], 2)
 #    number_of_cuts_index =  int(bit_string[3:], 2)
-#    cpg_kwds = {'algorithm':'value_poly_lp', "max_bkpt":trial_bkpts[number_breakpoints_index]}
+#    cpg_kwds = {'algorithm':'value_poly_lp', "max_bkpt":trial_eps_denom[esp_index]}
 #    numb_cuts =  trial_cuts[number_of_cuts_index]
 #    numb_cuts = trial_cuts[number_of_cuts_index]
 #    model = Model()
@@ -103,8 +105,8 @@ elif 0 <= exp_id <= 255:
 #    model=record_data(model)
 #    model.hideOutput()
 #    model.optimize()
-#    model.writeStatistics(filename=f"data/{model_name}.bkpt_as_param.value_poly_lp.bkpt_as_param.{cut_score_names[cut_score_index]}.{trial_bkpts[number_breakpoints_index]}.{numb_cuts}.out")
-#    with open(f"data/{model_name}.value_poly_lp.bkpt_as_param.{cut_score_names[cut_score_index]}.{trial_bkpts[number_breakpoints_index]}.{numb_cuts}.txt", 'w') as data_file:
+#    model.writeStatistics(filename=f"data/{model_name}.bkpt_as_param.value_poly_lp.bkpt_as_param.{cut_score_names[cut_score_index]}.{trial_eps_denom[esp_index]}.{numb_cuts}.out")
+#    with open(f"data/{model_name}.value_poly_lp.bkpt_as_param.{cut_score_names[cut_score_index]}.{trial_eps_denom[esp_index]}.{numb_cuts}.txt", 'w') as data_file:
 #        json.dump(model.data, data_file, default=sage_rational_to_json)
 #
 #except Exception as e:

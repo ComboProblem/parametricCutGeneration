@@ -221,7 +221,7 @@ class OptimalCut(Sepa):
         # pick the order to process the rows we will try to generate cuts
         process_order = sorted(to_try, key = lambda i: abs(model.frac(cols[basisind[i]].getPrimsol())-1/2))
         # work on generating an optimal cut. 
-        for i in process_order[:2]:
+        for i in process_order:
             if self.cgp_timing:
                 if model.getParam("limits/time") - model.getTotalTime()- self.mean_cgp_solve_time < 0:
                     break

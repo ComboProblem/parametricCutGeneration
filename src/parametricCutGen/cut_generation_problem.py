@@ -13,7 +13,7 @@ import time
 
 
 cut_generation_problem_logger = logging.getLogger(__name__)
-cut_generation_problem_logger.setLevel(logging.DEBUG)
+cut_generation_problem_logger.setLevel(logging.ERROR)
 
 # minimal_exprction_cashe_logging = True
 
@@ -192,8 +192,7 @@ def PWL_with_bkpts_manifold_chart_constraints(bkpt, M, values=None, *, coeff_typ
             cons.append(-1* M * (1 - bkpt[n-1]) + (-1 + values[n-1]) - values[n] <= 0 )
     return cons
 
-def find_feasible_point(bkpt, M, f_index,  *, \
-    coeff_type='int', epsilon=1e-9, backend=None, \
+def find_feasible_point(bkpt, M, f_index,  *, epsilon=1e-9, backend=None, \
     ring=QQ, backend_kwds={"sage_mip":{"solver":"GLPK", "maximization":True}}, \
     backend_args={"sage_mip":{"mip":None}}):
     """
@@ -442,8 +441,9 @@ class cutGenerationProblem:
         f_index = bkpt .index(fractional(QQ(f)))
         cut_generation_problem_logger.debug(f"bkpt={bkpt}\nsparce_bkpt={sparse_bkpt}\nf_index={f_index}")    
         #cut_generation_problem_logger.debug(f"gen poly")
-        x0 = find_feasible_point(bkpt, self._M, f_index, backend=self._backend, backend_kwds=self._backend_kwds)
+        # x0 = find_feasible_point(bkpt, self._M, f_index, backend=self._backend, backend_kwds=self._backend_kwds)
         bsa = write_cgp_constraints(bkpt, self._M, f_index, backend=self._backend)
+        x0 = np.array([float(x) for x in bsa.find_point()])
         scipy_cons = map_polyhedral_bsa_to_scipy_LinearConstraint(bsa)
         if scip is not None:
             cutcoefs_expr, cutrhs_expr, integral_indices, lp_soln = self.getParamaterizedCutExpr(scip, cols, rows, binvrow, binvarow, f, bkpt, f_index)

@@ -229,9 +229,11 @@ def value_nnc_polyhedron_constraints(bkpt, f_index, values=None, *, coeff_type='
         for linear_poly_expr in generate_symmetric_vertices_continuous_expr(h, bkpt[f_index]):
             lhs = [linear_poly_expr.coefficient(linear_poly_expr.parent().gens_dict()[name]) for name in coord_names]
             cst = linear_poly_expr.constant_coefficient()
+            cgf_special_logger.debug(f"lhs:{lhs}, cst:{cst}")
             if coeff_type == "int":
                 lcd = lcm(lcm([coeff.denominator() for coeff in lhs]), cst.denominator())
-                cons.append(sum([int(lcd * lhs[i]) * values[i] for i in range(n)]) + int(lcd * cst) == 1*lcd)
+                cgf_special_logger.debug(f"lcd:{lcd}")
+                cons.append(sum([int(lcd * lhs[i]) * values[i] for i in range(n)]) + int(lcd * cst) == int(1*lcd))
             elif coeff_type == "float":
                 cons.append(sum([float(lhs[i]) * values[i] for i in range(n)]) + float(cst) == 1)
             else: #sage rational type assumed
