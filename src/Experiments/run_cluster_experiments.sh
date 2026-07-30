@@ -22,7 +22,7 @@ if ! [ -f "downloads/solutions.zip" ]
 then
     echo "Downloading all solutions."
     wget https://miplib.zib.de/downloads/solutions.zip -P downloads/
-    unzip -u solution_files/solutions.zip -d solution_files
+    unzip -u downloads/solutions.zip -d solution_files
     for model in solution_files/solutions/*
     do
     	model_name=$(basename $model)
@@ -49,7 +49,7 @@ for model in model_files/*
 do
     model_name=$(basename $model .mps)
     echo "Queueing experiments for $model_name."
-    sbatch --array=0-256 --account=$CLUSTER_ACCOUNT --partition=$PARTITION --time=200:00 --output="TEMP/${model_name}_ID_%a.out" source/run_experiments.sh $model_name 
+    sbatch --array=0-64 --account=$CLUSTER_ACCOUNT --partition=$PARTITION --time=240:00 --output="TEMP/${model_name}_ID_%a.out" source/run_experiments.sh $model_name 
 done
 }
 
@@ -62,4 +62,5 @@ mkdir TEMP
 run_experiments
 }
 
-main
+#main
+get_solutions
