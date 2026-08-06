@@ -26,31 +26,39 @@ On the Cluster
 
 To start, clone parametricCutGeneration from source.  
 
-```git clone https://github.com/ComboProblem/parametricCutGeneration.git```
+``git clone https://github.com/ComboProblem/parametricCutGeneration.git``
 
 
 The cluster must be using ``SLURM`` cluster (https://slurm.schedmd.com/overview.html).
 and supports ``apptainer`` (https://apptainer.org/).
 
-Use your favorite editor such as ``vim`` to add ``src/Experiments/run_single_trial.sh`` and ``src/Experiments/run_experiments.sh`` to the ``.gitignore``.
+Use your favorite editor such as ``vim`` to add ``src/Experiments/run_single_trial.sh`` and ``src/Experiments/run_experiments.sh`` to the ``.gitignore``.::
 
+    vim .gitignore
 
-```vim .gitignore```
+Go to the experiments subdirectory. ::
 
-Go to the experiments subdirectory.
+    cd parametricCutGen/src/Experiements
 
-```cd parametricCutGen/src/Experiements```
+Get the MIP2017 problems.::
 
-Use your favorite editor such as ``vim`` to edit your SLURM account infromatiom  in ``run_single_trial.sh`` and ``run_experiments.sh``. 
+    chmod +x ./setup.sh
+    ./setup.sh
 
-```vim run_single_trial.sh```.
-```vim run_experiments.sh```.
+Use your favorite editor such as ``vim`` to edit your SLURM account infromatiom  in ``run_single_trial.sh`` and ``run_experiments.sh``. ::
 
-Runing a single trial of an experiment is simple. For example
+    vim run_single_trial.sh
+    vim run_experiments.sh
 
-```chmod +x ./run_single_trial.sh
-   ./run_single_trial.sh 64 gen-ip002
-``` 
+To run a single trial.::
+
+    chmod +x ./run_single_trial.sh
+    ./run_single_trial.sh 64 gen-ip016
+
+To run all trials::
+
+    chmod +x ./run_experiments.sh
+    ./run_experiments.sh
 
 Runs trial 64 on the model gen-ip002 from the 2017 MIP LIB benchmark set. 
 This trial corrosponds to the no cut generation baseline.
@@ -58,7 +66,7 @@ The current configuration assumes 200 minutes of run time per trial using a sing
 Modifying this could have adverse effects.
 In future versions, alternative run time configurations will be supported. 
 
-In general ```./run_single_trial.sh exp_ID model_name``. 
+In general ``./run_single_trial.sh exp_ID model_name``. 
 
 If you wish to reproduce all experiments (about 3 weeks in real time with at ~ 50 jobs running concurrently),
 
@@ -80,10 +88,5 @@ Be warned that ``trial command may exceed ``scip`` set time (mesured in seconds)
 
 ``data`` is a tracked folder. 
 
-====================
-Optimal Cut Data Set
-====================
-
-``data`` is a tracked folder. 
 
 
