@@ -10,6 +10,7 @@ src/Experiments/readme.rst
 src/Experiments/run_cluster_experiments.sh
 src/Experiments/run_single_experiment.sh
 src/Experiments/Test/data_collection_generation_test.py
+src/Experiments/Test/data_process_test.py
 src/Experiments/Test/process_raw_data.sh
 src/Experiments/notes/README.rst
 src/Experiments/notes/Untitled Document
@@ -26,6 +27,8 @@ src/Experiments/notes/paramFiles/scip_disable_other_cuts.set
 src/Experiments/notes/paramFiles/scip_experimental_settings.set
 src/Experiments/notes/paramFiles/scip_parameters_original.set
 src/Experiments/source/Apptainer.def
+src/Experiments/source/analyize_data.py
+src/Experiments/source/process_data.py
 src/Experiments/source/run_experiments.sh
 src/Experiments/source/run_trial.py
 src/parametricCutGen/__init__.py
@@ -48,4 +51,5 @@ src/parametricCutGen/code_notes/full_space_cgp.py
 src/parametricCutGen/code_notes/generic_solvers.py
 src/parametricCutGen/experimental_utils/__init__.py
 src/parametricCutGen/experimental_utils/cluster_utils.py
+src/parametricCutGen/experimental_utils/pysciopt_backtest_cgf.py
 src/parametricCutGen/experimental_utils/pyscipopt_data_collection_events.py

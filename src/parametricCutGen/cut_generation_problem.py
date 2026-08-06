@@ -92,7 +92,7 @@ def symmetrize_about_f_mod_1(bkpt, f):
 def PWL_with_bkpts_manifold_chart_constraints(bkpt, M, values=None, *, coeff_type=None, backend=None, feasiblity_problem=False, ring=QQ, backend_kwds={"sage_mip":{"solver":"GLPK", "maximization":True}}, backend_args={"sage_mip":{"mip":None}}):
     """Defines constraints for U_{m, M}, the domain of the selected chart from the cut generation problem.
 
-    :bkpt: - list, a breakpoint sequence of elements of QQ.
+    :bkpt: - list, a breakpoint sequence, entries are elements of QQ.
     
     :M: - ring(M) in QQ. 
 
@@ -153,9 +153,9 @@ def PWL_with_bkpts_manifold_chart_constraints(bkpt, M, values=None, *, coeff_typ
             M=float(M)
             for i in range(n-1):
                 cons.append( (values[i+1] - values[i]) - M* float(bkpt[i+1]-bkpt[i]) <= 0 )
-                cons.append( M* float(bkpt[i+1]-bkpt[i]) -  (values[i+1] - values[i])  <= 0 )
+                cons.append( -1*M* float(bkpt[i+1]-bkpt[i]) -  (values[i+1] - values[i])  <= 0 )
             cons.append(  (1 - values[n-1]) - M * float(1 - bkpt[n-1]) <= 0 )
-            cons.append( M* float(1 - bkpt[n-1]) +  (-1 * (1 - values[n-1])) <= 0 )    
+            cons.append( -1*M* float(1 - bkpt[n-1]) +  (-1 * (1 - values[n-1])) <= 0 )    
         else:
             M=R(M)
             # bkpt is assumed to be sage rational type,
@@ -180,27 +180,28 @@ def PWL_with_bkpts_manifold_chart_constraints(bkpt, M, values=None, *, coeff_typ
             M=float(M)
             for i in range(n-1):
                 cons.append( (values[i+1] - values[i]) - M* float(bkpt[i+1]-bkpt[i]) - values[n] <= 0 )
-                cons.append( M* float(bkpt[i+1]-bkpt[i]) -  (values[i+1] - values[i]) - values[n]  <= 0 )
+                cons.append( -1*M* float(bkpt[i+1]-bkpt[i]) -  (values[i+1] - values[i]) - values[n]  <= 0 )
             cons.append(  (1 - values[n-1]) - M * float(1 - bkpt[n-1]) - values[n] <= 0 )
             cons.append(-1* M* float(1 - bkpt[n-1]) +  (- 1 + values[n-1]) - values[n] <= 0 )    
         else:
             M=R(M)
             for i in range(n-1):
                 cons.append( (values[i+1] - values[i]) + (-1*M)* (bkpt[i+1]-bkpt[i]) - values[n] <= 0 )
-                cons.append( M * (bkpt[i+1]-bkpt[i]) -  (values[i+1] - values[i]) - values[n] <= 0 )
+                cons.append( -1*M * (bkpt[i+1]-bkpt[i]) -  (values[i+1] - values[i]) - values[n] <= 0 )
             cons.append( (1 - values[n-1]) - M * (1 - bkpt[n-1]) - values[n] <= 0 )
             cons.append(-1* M * (1 - bkpt[n-1]) + (-1 + values[n-1]) - values[n] <= 0 )
     return cons
 
 def find_feasible_point(bkpt, M, f_index,  *, epsilon=1e-9, backend=None, \
     ring=QQ, backend_kwds={"sage_mip":{"solver":"GLPK", "maximization":True}}, \
-    backend_args={"sage_mip":{"mip":None}}):
+    backend_args={"sage_mip":{"mip":None}}): 
     """
-    find x0 in VP_bkpt,f_index cap U_{m, M} where m is the multiplcity vector of bkpt.
+    Find x0 in VP_bkpt,f_index cap U_{m, M} where m is the multiplcity vector of bkpt.
 
-    See doc strings of value_nnc_polyhedron_constraints and PWL_with_bkpts_manifold_chart_constraints for 
-
-    x0 - np.array of dtype=float of shape (n,)
+    See doc strings of value_nnc_polyhedron_constraints and PWL_with_bkpts_manifold_chart_constraints for parameter infromation. 
+    
+    returns: 
+    `x0` - np.array of dtype=float of shape (n,)
     """
     n = len(bkpt)
     if backend == 'pplite' or backend == None:
@@ -223,6 +224,7 @@ def find_feasible_point(bkpt, M, f_index,  *, epsilon=1e-9, backend=None, \
         x0 = bsa.find_point()
     elif backend == 'sage_mip' or backend=='cvxpy':
         if backend == 'sage_mip':
+            # try with highs. 
             bsa = BasicSemialgebraicSet_polyhedral_MixedIntegerLinearProgram(QQ, n+1, solver=backend_kwds["sage_mip"]["solver"])
             values = list(bsa.mip_gens())
             lp = bsa.mip() # has method.add_constraint
@@ -251,7 +253,21 @@ def find_feasible_point(bkpt, M, f_index,  *, epsilon=1e-9, backend=None, \
         raise ValueError("specify a valid backend for the feasiblity problem")
     return np.array([float(xi) for xi in x0])
 
-def write_cgp_constraints(bkpt, M, f_index,  *, epsilon=1e-9, backend=None):
+def write_cgp_constraints(bkpt, M, f_index,  *, epsilon=1e-9, backend='pplite'):
+    """
+    Write the constraints of a cut genration problem for the value polyhedron and the manifold constraints.
+
+    :bkpt:, :M:, :f_index: are defined in :function:``value_nnc_polyhedron_constraints`` and :function:`PWL_with_bkpts_manifold_chart_constraints.
+    
+    :epsilon: real number >= 0, models > as >=.
+
+    :backend: Polyhedral backend; `None` or \'pplite\'. Default is \'pplite\' as its implemenation is faster. None uses pplpy as a baceknd.
+    
+    Outputs 
+
+    :bsa: - :cutgeneratingfunctiology.spam:``BasicSemialgebraicSet`` with the given constraints. 
+    
+    """
     n = len(bkpt)
     if backend == 'pplite':
         Value_Poly = pplite_NNC_Polyhedron(dim_type = n, spec_elem = "universe", topology = "nnc")
@@ -272,6 +288,9 @@ def write_cgp_constraints(bkpt, M, f_index,  *, epsilon=1e-9, backend=None):
     return bsa
 
 def inf_norm_of_cont_pwl(f, g):
+    """
+    ||f-g||_infty where f,g are PW1D functions. 
+    """
     return max([abs(v) for v in (f-g).values_at_end_points()])
 
 
@@ -351,7 +370,7 @@ class cutGenerationProblem:
     
     - \"pplite\" : (alpha) use pplite as a polyhedral backend for computations. 
 
-    - \"sage_mip\" : (stable) use sagemaths `MixedIntegerProgram` class a sa polyhedral backend for computations.
+    - \"sage_mip\" : (stable) use sagemaths `MixedIntegerProgram` class a polyhedral backend for computations.
 
     :cut_score:
 
@@ -359,7 +378,12 @@ class cutGenerationProblem:
 
     - \" \" 
     """
-    def __init__(self, *, algorithm=None, backend=None, cut_score=None,  epsilon=1e-2, M = 1e6, max_cgp_solver_time=None, max_num_of_bkpts=4, multithread=False, objective_sense="maximize", prove_seperator=False, show_proof=False,  solver_args={"cvxpy": None, "scipy": None}, solver_kwds={"cvxpy:" : None, "scipy": None}, backend_kwds={"sage_mip":{"solver":"GLPK"}},  enable_profiling=False):
+    def __init__(self, *, algorithm=None, backend=None, cut_score=None, 
+        epsilon=1e-2, numerical_epsilon=1e-9, M = 1e6, 
+        max_cgp_solver_time=None, max_num_of_bkpts=4, multithread=False, 
+        objective_sense="maximize", prove_seperator=False, show_proof=False, 
+        solver_args={"cvxpy": None, "scipy": None}, solver_kwds={"cvxpy:" : None, "scipy": None}, 
+        backend_kwds={"sage_mip":{"solver":"GLPK"}},  enable_profiling=False):
         """
         TESTS::
         >>> from parametricCutGen.cut_generation_problem import *
@@ -368,6 +392,7 @@ class cutGenerationProblem:
         >>> cgp.get_cgp_input_parameters()
         
         """
+        # To recall parameters for debugging puposes. 
         self._cgp_input_parameters = {**locals()} # copy input parameters; only inital inputs here.
         self._cgp_input_parameters.pop("self") # This is required to ensure that when parameters are reused for initlaziation, problems doens't arise.
         # TODO: Implement a way so that cgps with the same parameter are the same object; maybe.
@@ -389,7 +414,8 @@ class cutGenerationProblem:
         self._prove_seperator = prove_seperator
         self._show_proof = show_proof
         self._backend = backend
-        self._epsilon= epsilon
+        self._epsilon = epsilon
+        self._numerical_epsilon = numerical_epsilon 
         self._M = M
         self._max_cgp_solver_time = max_cgp_solver_time
         self._max_num_of_bkpts = max_num_of_bkpts
@@ -438,12 +464,14 @@ class cutGenerationProblem:
         bkpt = symmetrize_about_f_mod_1(sparse_bkpt, f)
         n = len(bkpt)
         # ensure a breakpoint sequence is given
-        f_index = bkpt .index(fractional(QQ(f)))
+        f_index = bkpt.index(fractional(QQ(f)))
         cut_generation_problem_logger.debug(f"bkpt={bkpt}\nsparce_bkpt={sparse_bkpt}\nf_index={f_index}")    
         #cut_generation_problem_logger.debug(f"gen poly")
-        # x0 = find_feasible_point(bkpt, self._M, f_index, backend=self._backend, backend_kwds=self._backend_kwds)
         bsa = write_cgp_constraints(bkpt, self._M, f_index, backend=self._backend)
-        x0 = np.array([float(x) for x in bsa.find_point()])
+        if self._backend == "sage_mip":
+            x0 = find_feasible_point(bkpt, self._M, f_index, epsilon=self._numerical_epsilon, backend=self._backend) # solves feasiblity lp, rather than find an interor point of a polyehdron.
+        else:
+            x0 = np.array([float(x) for x in bsa.find_point()]) # picks inital point on relitive interor of the value polyhedron.
         scipy_cons = map_polyhedral_bsa_to_scipy_LinearConstraint(bsa)
         if scip is not None:
             cutcoefs_expr, cutrhs_expr, integral_indices, lp_soln = self.getParamaterizedCutExpr(scip, cols, rows, binvrow, binvarow, f, bkpt, f_index)
@@ -537,25 +565,20 @@ class cutGenerationProblem:
         return pi_p, score, len(sparse_bkpt)
 
     def getParamaterizedCutExpr(self, scip, cols, rows, binvrow, binvarow, primsol, bkpt, f_index):
-        """ Given the row (binvarow, binvrow) of the tableau, computes and expression for the cut in the value parameters (gammai).
-
+        """ Given the row (binvarow, binvrow) of the tableau, computes
+        an expression for the cut in the value parameters (gammai).
+        
+        :param scip: scip model
         :param primsol:  is the rhs of the tableau row
         :param cols:     are the variables
         :param rows:     are the slack variables
         :param binvrow:  components of the tableau row associated to the basis inverse
         :param binvarow: components of the tableau row associated to the basis inverse * A
-        :param vals:    value parameters
-    
-        The intersection cut is given by
-         sum(pi_p(a_j) x_j, j in J_I) \geq 1
-        where J_I are the integer non-basic variables and J_C are the continuous.
-        f_0 is the fractional part of primsol
-        a_j is the j-th coefficient of the row and f_j its fractional part
-        Note: we create -% <= -f_0 !!
-        Note: this formula is valid for a problem of the form Ax = b, x>= 0. Since we do not have
-        such problem structure in general, we have to (implicitly) transform whatever we are given
-        to that form. Specifically, non-basic variables at their lower bound are shifted so that the lower
-        bound is 0 and non-basic at their upper bound are complemented.
+        :param bkpt:     breakpoint sequence
+        :f_index:        for the value polyhedron
+
+        Output
+        parametarized cut expression and MIP relaxation lp information for cgp.
         """
         coord_names = ['gamma'+str(i) for i in range(len(bkpt))]
         K = PolynomialRing(QQ, names=coord_names, order='lex')

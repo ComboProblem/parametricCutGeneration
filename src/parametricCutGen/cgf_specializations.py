@@ -8,7 +8,6 @@ from pplite import Variable as pplite_Variable, Constraint as pplite_Con, Linear
 cgf_special_logger = logging.getLogger(__name__)
 cgf_special_logger.setLevel(logging.ERROR)
 
-
 def to_sage_rationals(iterable):
     """Helper function to converte to sage rationals when needed."""
     return [QQ(i) for i in iterable]
@@ -93,7 +92,7 @@ def generate_type_1_vertices_continuous_expr(fn):
 
 def generate_type_2_vertices_continuous_expr(fn):
     """
-    Output expressions for delta pi at type 1 vertices.
+    Output expressions for delta pi at type 2 vertices.
     """
     bkpt = fn.end_points()
     bkpt2 = bkpt[:-1] + [ x+1 for x in bkpt ]
@@ -120,7 +119,7 @@ def generate_symmetric_vertices_continuous_expr(fn, f):
 
 def value_nnc_polyhedron_constraints(bkpt, f_index, values=None, *, coeff_type='int', epsilon=.00000000001, log_pw_functions=False, backend=None, feasiblity_problem=False, ring=QQ):
     r"""
-    Returns a list of constraints, possibiely evaluated, representing the value polyhedron for the given (proper) breakpoint sequence, f index, and values.
+    Returns a list of constraints like objects, representing the value polyhedron for the given (proper) breakpoint sequence, f index, and values.
 
     Positional INPUTS::
     -`bkpt` - a proper breakpoint sequence, list like of sage rationals.

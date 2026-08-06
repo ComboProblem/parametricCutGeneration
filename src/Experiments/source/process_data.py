@@ -84,6 +84,7 @@ def process_minimality_constraint_violation(preprocessed_data, max_minimality_co
     return result
 
 def process_compare_functions(preprocess_data, is_all_gmic, fun_equality=1e-9):
+    """Check if esp_denom, number of cuts are fixed, if functions with different cut scores are within norm of each other"""
     result = {} # row result will be 
     for eps_index in range(2, 17):
         exp_ids = [int(bin(i)[2:]+bin(eps_index)[2:], 2) for i in range(4)]
@@ -106,9 +107,6 @@ def process_compare_functions(preprocess_data, is_all_gmic, fun_equality=1e-9):
             continue
     return result
 
-
-
-
 def process_if_functions_are_gmic(preprocessed_data, fun_equality=1e-9):
     def is_gmic(fun):
 	    f_index = find_f_index(fun)
@@ -118,43 +116,22 @@ def process_if_functions_are_gmic(preprocessed_data, fun_equality=1e-9):
 	    return False
     functions_are_gmic = lambda exp_id : [is_gmic(fun) for fun in preprocessed_data[exp_id]["fun_data"]["fun"]]
 	result = {exp_id : functions_are_gmic(exp_id) for exp_id in preprocessed_data["exp_id"]}
-    return result	
+    return result
 
-def 
-
-
-def approx_tree_data(preprocessed_data, model_name, sol_path):
+def realitive_gap_and_tree_approx(preprocessed_data, model_name, sol_path):
+    result_result_rel_gap = {}
+    result_tree_approx = {}
     result = {}
-    model = Model()
-    model.readProblem(filename=f"model_files/{model_name}.mps)
-    model.setParam("limits/time", scip_time)
-    model.setSeparating(SCIP_PARAMSETTING.OFF)
-    sepa = approxTreeDepth(None, None, model_name)
-    model.includeSepa(sepa, "optimal_cut", "optimal cut over space of paramaterized cut generating functions", priority=10000, freq=0)
-    model.setParam("separating/maxcutsroot", 1)
-    model.setParam("separating/maxroundsroot", 1)
-    model.setHeuristics(SCIP_PARAMSETTING.OFF)
-    heuristic = OracleHeurisitc(sol_path)
-    model.setPresolve(SCIP_PARAMSETTING.OFF)
-    model.includeHeur(heuristic, "OracleHeurisitc", "for observing changes in dual bound from cuts", "Y", timingmask=SCIP_HEURTIMING.DURINGLPLOOP)
-    model.setParam("limits/nodes", 1)
-    model.optimize()
-    model_lp_with_cut = Model()
-    model_lp_with_cut.readProblem(filename=f"TEMP/{model_name}.{row}.lp")
-    model_lp_with_cut.optimize()
-    no_cuts_sol = model_lp_with_cut.getSols()
-    no_cuts_dual_value = model_lp_with_cut.getDualbound()
-    result[exp_id]
-    for exp_id in preprocessed_data["exp_id"] if exp_id != 64:
+    temp = {}
+    def tree_depth_approx(oracle_sol, sol_processed):
+        return sum(int(abs(oracle_sol[key]-sol_processed[key]))+1 for  key in oracle_sol.keys())
+    for exp_id in preprocessed_data["exp_id"]:
         for row,fun in zip(preprocessed_data[exp_id]["fun_data"]["row"], preprocessed_data[exp_id]["fun_data"]["fun"])
             model = Model()
-            model.readProblem(filename=f"model_files/{model_name}.mps)
-
-            #base tree depth - fun_base_tree > 0 is good meaning smaller estimated tree size,  <= no poential savings,
-            # factors into tree depth, problem size, cut gen problem size
+            model.readProblem(filename=f"model_files/{model_name}.mps")
             model.setParam("limits/time", scip_time)
             model.setSeparating(SCIP_PARAMSETTING.OFF)
-            sepa = approxTreeDepth(row, fun, model_name)
+            sepa = backTest(exp_id, row, fun, model_name)
             model.includeSepa(sepa, "optimal_cut", "optimal cut over space of paramaterized cut generating functions", priority=10000, freq=0)
             model.setParam("separating/maxcutsroot", 1)
             model.setParam("separating/maxroundsroot", 1)
@@ -164,11 +141,22 @@ def approx_tree_data(preprocessed_data, model_name, sol_path):
             model.includeHeur(heuristic, "OracleHeurisitc", "for observing changes in dual bound from cuts", "Y", timingmask=SCIP_HEURTIMING.DURINGLPLOOP)
             model.setParam("limits/nodes", 1)
             model.optimize()
-            model_lp_with_cut = Model()
+            model.writeMIP(filename=f"TEMP/{model_name}.{exp_id}.{row}.lp")
             model_lp_with_cut.readProblem(filename=f"TEMP/{model_name}.{exp_id}.{row}.lp")
+            model_lp_with_cut.relax()
             model_lp_with_cut.optimize()
-            sol = model_lp_with_cut.getSols()
+            sol = model_lp_with_cut.getVarDict()
+            sol_processed = {key : sol["t_"+key] for key in oracle_sol.keys() }
             dual_value = model_lp_with_cut.getDualbound()
-            result[exp_id]
+            if exp_id != 64:
+                temp[exp_id] = (sol_processed, dual_value)
+            if exp_id == 64:
+                temp[exp_id] = (sol_processed, dual_value)
+                oracle_sol = model.getVarDict()                
+                temp["oracle_sol"] = oracle_sol
+    for exp_id in preprocessed_data["exp_id"]:
+        result_tree_approx[exp_id] = tree_depth_approx(temp[exp_id][0],temp["oracle_sol"])
+        result_result_rel_gap[exp_id] = abs(temp[exp_id][1]-temp[64][1])/max(abs(temp[64][1]))
+    result["tree_approx"] = result_tree_approx
+    result["dual_gap"] = result_result_rel_gap
     return result
-    

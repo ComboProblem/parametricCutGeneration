@@ -29,14 +29,25 @@ model.includeHeur(heuristic, "OracleHeurisitc", "for observing changes in dual b
 model.setParam("limits/nodes", 1)
 model.optimize()
 model.writeMIP(filename=f"TEMP/{model_name}.{exp_id}.{row}.lp")
-oracle_sol = model.getSols()
+#oracle_sol = model.getSols()[0]
+#print(oracle_sol, model.getDualbound())
+oracle_sol = model.getVarDict()
 print(oracle_sol)
+#model.relax()
+#model.optimize()
+#print(model.getSols(), model.getDualbound())
+
 model_lp_with_cut = Model()
 model_lp_with_cut.readProblem(filename=f"TEMP/{model_name}.{exp_id}.{row}.lp")
 model_lp_with_cut.relax()
 model_lp_with_cut.optimize()
-sol = model_lp_with_cut.getSols()
+#sol = model_lp_with_cut.getSols()[0]
+sol = model_lp_with_cut.getVarDict()
+sol_processed = {key : sol["t_"+key] for key in oracle_sol.keys() }
 dual_value = model_lp_with_cut.getDualbound()
-result[exp_id] = (sol, dual_value)
+result[exp_id] = (sol_processed, dual_value)
 print(result[exp_id])
 
+def tree_depth_approx(oracle_sol, sol_processed):
+    return sum(int(abs(oracle_sol[key]-sol_processed[key]))+1 for  key in oracle_sol.keys())
+print(tree_depth_approx(oracle_sol, sol_processed))

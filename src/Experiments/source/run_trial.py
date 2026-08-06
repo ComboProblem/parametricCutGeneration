@@ -34,7 +34,6 @@ def sage_rational_to_json(obj):
         return {'__sage.rings.rational.Rational__': True, 'numerator': int(obj.numerator()), 'denominator': int(obj.denominator())}
     raise TypeError(f'Cannot serialize object of {type(obj)}')
 
-#try:
 bits_for_id = 6
 
 if exp_id == 2**bits_for_id:
@@ -58,7 +57,7 @@ elif 0 <= exp_id <= 2**bits_for_id-1:
     bit_string =  '0'*(bits_for_id-exp_id.bit_length()) + bin(exp_id)[2:]
     cut_score_index = int(bit_string[0:2], 2)
     esp_index =  int(bit_string[2:], 2)
-    number_of_cuts_index = 0 #int(bit_string[5:], 2)
+    number_of_cuts_index = 0 # For future testing, once generation is faster, additional cuts could be generated.
     cpg_kwds = {'algorithm':'bkpt_as_param', 'backend':'pplite', 'cut_score':cut_score_names[cut_score_index],  "epsilon": 1/trial_eps_denom[esp_index], "M":1e6}
     numb_cuts = trial_cuts[number_of_cuts_index]
     model = Model()
@@ -80,39 +79,3 @@ elif 0 <= exp_id <= 2**bits_for_id-1:
     model.writeStatistics(f"data/{model_name}.bkpt_as_param.{cut_score_names[cut_score_index]}.{trial_eps_denom[esp_index]}.{numb_cuts}.stats.json")
     with open(f"data/{model_name}.bkpt_as_param.{cut_score_names[cut_score_index]}.{trial_eps_denom[esp_index]}.{numb_cuts}.txt", 'w') as data_file:
         json.dump(model.data, data_file, default=sage_rational_to_json)
-    
-#elif exp_id > 255:
-#    exp_id = exp_id - 255
-#    bit_string =  '0'*(6-exp_id.bit_length()) + bin(exp_id)[2:]
-#    number_breakpoints_index =  int(bit_string[0:3], 2)
-#    number_of_cuts_index =  int(bit_string[3:], 2)
-#    cpg_kwds = {'algorithm':'value_poly_lp', "max_bkpt":trial_eps_denom[esp_index]}
-#    numb_cuts =  trial_cuts[number_of_cuts_index]
-#    numb_cuts = trial_cuts[number_of_cuts_index]
-#    model = Model()
-#    model.readProblem(filename=model_path)
-#    model.setParam("limits/time", scip_time)
-#    model.setSeparating(SCIP_PARAMSETTING.OFF)
-#    sepa = OptimalCut(write_cgf_data=True, cgp_kwds=cpg_kwds)
-#    model.includeSepa(sepa, "optimal_cut", "optimal cut over space of paramaterized cut generating functions", priority=10000, freq=0)
-#    model.setParam("separating/maxcutsroot", 1)
-#    model.setParam("separating/maxroundsroot", numb_cuts)
-#    model.setHeuristics(SCIP_PARAMSETTING.OFF)
-#    heuristic = OracleHeurisitc(sol_path)
-#    model.includeHeur(heuristic, "OracleHeurisitc", "for observing changes in dual bound from cuts", "Y", timingmask=SCIP_HEURTIMING.DURINGLPLOOP)
-#    model.setPresolve(SCIP_PARAMSETTING.OFF)
-#    model.setParam("limits/nodes", 1)
-#    model=record_data(model)
-#    model.hideOutput()
-#    model.optimize()
-#    model.writeStatistics(filename=f"data/{model_name}.bkpt_as_param.value_poly_lp.bkpt_as_param.{cut_score_names[cut_score_index]}.{trial_eps_denom[esp_index]}.{numb_cuts}.out")
-#    with open(f"data/{model_name}.value_poly_lp.bkpt_as_param.{cut_score_names[cut_score_index]}.{trial_eps_denom[esp_index]}.{numb_cuts}.txt", 'w') as data_file:
-#        json.dump(model.data, data_file, default=sage_rational_to_json)
-#
-#except Exception as e:
-#    logging.debug(e)
-#    print()
-#    try:
-#        data = {"Exception": str(e)} | model.data
-#    except Exception as e2:
-#        data = {"Exception": str(e), "failure": str(e2)}

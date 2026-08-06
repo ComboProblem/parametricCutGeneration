@@ -1,0 +1,39 @@
+!#/usr/bin/bash
+
+cd src/Experiments
+
+set_container_mode()
+{
+export cgp_CONTAINER="y"
+}
+
+set_python_build()
+{
+export cgp_CONTAINER="n"
+}
+
+run_trial()
+{
+export SLURM_ARRAY_TASK_ID=$1
+export MODEL=$2
+if {$CONTAINER == "y" } ; then 
+apptainer run container/cgp.sif source/run_trial.sh $MODEL
+else {
+python3 source/run_trial.sh $MODEL
+}
+
+}
+
+trial_cgp()
+export SLURM_ARRAY_TASK_ID=$1
+export MODEL=$2
+if {$CONTAINER == "y" } ; then 
+apptainer container/cgp.sif python3 Test/run_trial.sh $MODEL
+else {
+python3 source/run_trial.sh $MODEL
+}
+
+main(){
+if {}
+source 
+}

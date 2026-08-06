@@ -10,10 +10,18 @@ optimal_cut_logger = logging.getLogger(__name__)
 optimal_cut_logger.setLevel(logging.ERROR)
 
 # Adapted from the example in the docs. hhttps://pyscipopt.readthedocs.io/en/latest/tutorials/separator.html
-# Note; pplitepy is in an alpha stage so this can't be relied on. Use ppl until this comment is updated. 
 
 class OptimalCut(Sepa):
-    def __init__(self, *, cgp_kwds=None, cgp_timing=True, write_cgf_data=False):
+    """
+    Impements an interface to pyscipopt for a ``cutGenerationProblem``.
+
+    :Parameters:
+    \'cgp_kwds\' - Keywords for the :class:``cutGenerationProblem``.
+    \'max_cuts\' - ``None`` or positive integer. Maximum number of cuts to gengerate.
+    \'cgp_timing\' - ``None``, \'scip\' or real number. Bounds the number of cuts by cgp_timing 
+    
+    """
+    def __init__(self, *, cgp_kwds={}, cgp_timing='scip', max_cuts=None, write_cgf_data=False):
         """
         TESTS::
         >>> from parametricCutGen.optimal_cut_generation import OptimalCut
@@ -27,6 +35,7 @@ class OptimalCut(Sepa):
         """
         self.ncuts = 0
         self.write_cgf_data = write_cgf_data
+        self.max_cuts =
         if cgp_kwds is None:
             self.cgp = cutGenerationProblem()
         else:    
@@ -39,7 +48,8 @@ class OptimalCut(Sepa):
             self.mean_cgp_solve_time = 0
 
     def getOptimalCutFromRow(self, cols, rows, binvrow, binvarow, primsol, pi_p):
-        """ Given the row (binvarow, binvrow) of the tableau, computes optimized cut.
+        """ Given the row (binvarow, binvrow) of the tableau, computes optimized cut generated
+        from the cut generating problem as specified by ``cgp_kwds``.
 
         :param primsol:  is the rhs of the tableau row
         :param cols:     are the variables
@@ -48,16 +58,7 @@ class OptimalCut(Sepa):
         :param binvarow: components of the tableau row associated to the basis inverse * A
         :param 1dPWL:    a minimal function, ab element of PiMin<=k with pi_p(primsol)=1
     
-        The intersection cut is given by
-         sum(pi_p(a_j) x_j, j in J_I) \geq 1
-        where J_I are the integer non-basic variables and J_C are the continuous.
-        f_0 is the fractional part of primsol
-        a_j is the j-th coefficient of the row and f_j its fractional part
-        Note: we create -% <= -f_0 !!
-        Note: this formula is valid for a problem of the form Ax = b, x>= 0. Since we do not have
-        such problem structure in general, we have to (implicitly) transform whatever we are given
-        to that form. Specifically, non-basic variables at their lower bound are shifted so that the lower
-        bound is 0 and non-basic at their upper bound are complemented.
+        The cut generated is an intersection cut.
         """
 
         # initialize
@@ -215,15 +216,20 @@ class OptimalCut(Sepa):
                 if var.vtype() != "CONTINUOUS":
                     primsol = cols[c].getPrimsol()
                     assert model.getSolVal(None, var) == primsol
-                    # while cut generating problems can address small value, we don't konw the effects on teh cuts numerical stablility.
+                    # while cut generating problems can address small value, we don't konw the effects on the cuts numerical stablility.
                     if .01 <= model.frac(primsol) <= 1 - .01:
                         to_try.append(i)
         # pick the order to process the rows we will try to generate cuts
         process_order = sorted(to_try, key = lambda i: abs(model.frac(cols[basisind[i]].getPrimsol())-1/2))
         # work on generating an optimal cut. 
         for i in process_order:
-            if self.cgp_timing:
-                if model.getParam("limits/time") - model.getTotalTime()- self.mean_cgp_solve_time < 0:
+            if self.cgp_timing is not None:
+                # this is not 
+                if self.cgp_timing == "scip":
+                    max_time = model.getParam("limits/time")
+                else:
+                    max_time = self.cgp_timing
+                if max_time - model.getTotalTime()- self.mean_cgp_solve_time < 0:
                     break
             c = basisind[i]
             primsol = cols[c].getPrimsol()
@@ -238,13 +244,13 @@ class OptimalCut(Sepa):
             costs = [model.getColRedCost(j) for j in cols if j not in basisind]
 
             # start clock
-            if self.cgp_timing:
+            if self.cgp_timing is not None:
                 cgp_start_time = model.getTotalTime()
 
             cgf, cut_score, prob_dim = self.cgp.solve(binvrow, binvarow, primsol, costs, cols, rows, model) # produce an optimal cgf
 
             # keep running track of average solve time.
-            if self.cgp_timing:
+            if self.cgp_timing is not None:
                 self.cgp_solve_time += model.getTotalTime()-cgp_start_time
                 self.ncgp_solves += 1
                 self.mean_cgp_solve_time = self.cgp_solve_time/self.ncgp_solves

@@ -4,13 +4,20 @@ from scipy.optimize import minimize, LinearConstraint, NonlinearConstraint
 from .execptions import *
 import logging
 
+r"""
+Inteface from :scipy: non-linear solvers interface to a :class:``cutGenerationProblem``.
+"""
+
 scipy_interface_logger = logging.getLogger(__name__)
 scipy_interface_logger.setLevel(logging.ERROR)
 
 
 def map_polyhedral_bsa_to_scipy_LinearConstraint(bsa, epsilon=10**-9):
     """
-    Maps a cutgeneratingfunctionlogy ``basic_semialgebraic_set`` polynomial constraints to scipy constraint objects. 
+    Maps objects from :cutgeneratingfunctionlogy::spam::basic_semialgebraic:
+    with linear constraints to :scipy: constraints as matrices :np.array:
+    with shape (n,m) where n is the number of variables and m is the
+    number of polynoimal constraints of the `bsa`. 
     """
     lb = []
     ub = []
@@ -65,9 +72,13 @@ def map_polyhedral_bsa_to_scipy_LinearConstraint(bsa, epsilon=10**-9):
 
 def map_bsa_to_scipy_NonLinearConstraint(bsa, epsilon=10**-9):
     r"""
-    Given a BSA with nonlinear constraints, converts into an equivalent set of nonlinear constraints for scipy.
-
-    Treats p(x) < c as p(x) + epsilon <= c for all epsilon>0.
+    Maps objects from  :cutgeneratingfunctionlogy::spam::basic_semialgebraic: with polynomial constraints
+    to :scipy:``NonLinearConstraint`` constraints by defining polynomial functions on np.array with shape
+    (n,) with output of np.array with shap (m,) where n is the number of varialbes of the bsa and m is   
+    the number of constraints. Graidents are computed algebraically and provided to :scipy:. 
+    
+    To model < as <=, we treat c_i < 0 if and only if c_i + epislon <= 0 since :scipy: does not support 
+    strict inequalities in modeling. 
     """
     nonlinear_constraints = []
     # All variables are implicitly bounded between 0 and 1.
@@ -110,34 +121,49 @@ def map_bsa_to_scipy_NonLinearConstraint(bsa, epsilon=10**-9):
     return nonlinear_constraints
 
 class scipyCutScoreForBkptAsParam:
-    def __init__(self, cut_score=None, epsilon=1e-8, M=1e8):
+    """
+    For defining paramaterized objective functions for
+    :class:`cutGenenratingProblem`when the `algorithm`
+    selected is \'bkpt_as_param\'.
+
+    Options include...
+    \'parallelism\' - for objective fucntion parallelism.
+    \'violation\' - to optimize for violation.
+    \'realitive_violation\' - to optimize for realitve violation.
+    \'cut_off_distance\' - to optimize for cut off distance 
+    """
+    def __init__(self, cut_score=None):
         """
-        cut_score: name or function with signature (cut_lhs, cut_rhs, binvc, lp_solution). 
+        :cut_score: name or function with signature (cut_lhs, cut_rhs, binvc, lp_solution). 
         """
         if cut_score is None or cut_score == "scip":
-            self.cut_score = scipy_scip_standard_cut_score
+            self.cut_score = self.scipy_scip_standard_cut_score
             # TODO: self.grad_cut_score = 
         elif cut_score == "parallelism":
-            self.cut_score = scipy_objective_function_parallelism
+            self.cut_score = self.scipy_objective_function_parallelism
         elif cut_score == "violation":
-            self.cut_score = scipy_violation
+            self.cut_score = self.scipy_violation
         elif cut_score == "realitive_violation":
-            self.cut_score = scipy_realitive_violation
+            self.cut_score = self.scipy_realitive_violation
         elif cut_score == "cut_off_distance":
-            self.cut_score = scipy_cut_off_distance
+            self.cut_score = self.scipy_cut_off_distance
         else:
             self.cut_score = cut_score
-        self._epsilon = epsilon
         self._current_point = None
 
     def gen_cut_score(self, f_index,  cutcoefs_expr, cutrhs_expr, current_feasible_soln, binvc, integral_indices):
         """
-        Defines cut score based on fixed problem data.
+        Defines paramaterized objective function of  score based on fixed problem data.
+
+        Input:
+        :f_index: - 
+        :cutcoefs_expr: - list of polynomial expression defined on (b,v) for the paramaterized cut's coeffients (lhs) based on the current node, row selecte, ect. 
+        :cutrhs_expr: - polynomial experssions defined on (b,v) for the  cut's rhs in for the given node.
+        :current_feasible_soln: - LP solution of the current B&B node.
+        :binvc: - the reduced costs of the LP of teh current B&B node.
         """
         def s(value_parameters):
             val =  to_sage_rationals(value_parameters)
-            # val = self.validate_point(val, f_index)
-            # self._current_point = val
             coord_names = ['gamma'+str(i) for i in range(len(value_parameters))] # same as num bkpts
             map_to_vector = lambda expr : [expr.coefficient(expr.parent().gens_dict()[name]) for name in coord_names]
             vectors = [ map_to_vector(expr) for expr in cutcoefs_expr ] # inner lists are coeffics of gammis, outer lists are for orignal coordinates
@@ -149,61 +175,58 @@ class scipyCutScoreForBkptAsParam:
             return self.cut_score(cut_lhs, cut_rhs, binvc, current_feasible_soln, integral_indices)
         return s
 
-    def validate_point(self, value_parameters, f_index):
-        # This enforces the "manifoldness" of PWL.
-        # we just need to ensure that our values output are for sure correct. 
-        epsilon = self._epsilon
-        n = len(value_parameters)
-        v = to_sage_rationals(value_parameters)
-        # values should be in [0,1]
-        for i in range(n):
-            if (v[i] < 0 or v[i] + epsilon> 1) and i != f_index:
-                raise ModelViolation(f"validate_point: breakpoint gamma_{i} < 0 or gamma_{i}>= 1; gamma_{i}=={v[i]}")
-        # pi(0) = 0, pi(f) = 1
-        if abs(v[0]-0) <= epsilon:
-            v[0] = 0
+    def scipy_objective_function_parallelism(self, cut_lhs, cut_rhs, binvc, lp_solution, integral_indices):
+        """
+        Paramaterized version of parallelism cut score.
+        
+        See `scipyCutScoreForBkptAsParam.gen_cut_score` for parameter arguments.
+        """
+        # eval cutcoefs_expr at val to get cut. 
+        cut = np.array(cut_lhs)/np.linalg.norm(cut_lhs)
+        c = np.array(binvc)/np.linalg.norm(binvc)
+        # scipy_interface_logger.debug(f"{cut @ c}")
+        return cut @ c
+
+    def scipy_violation(self, cut_lhs, cut_rhs, binvc, lp_solution, integral_indices):
+        """
+        Paramaterized version of violation cut score.
+        
+        See `scipyCutScoreForBkptAsParam.gen_cut_score` for parameter arguments.
+        """
+        scipy_interface_logger.debug(f"{np.array(cut_lhs)@ np.array(lp_solution) - cut_rhs}")
+        return np.array(cut_lhs)@ np.array(lp_solution) - cut_rhs
+        
+    def scipy_realitive_violation(self, cut_lhs, cut_rhs, binvc, lp_solution, integral_indices):
+        """
+        Paramaterized version of realitive violation cut score.
+        
+        See `scipyCutScoreForBkptAsParam.gen_cut_score` for parameter arguments.
+        """
+        if cut_rhs != 0:
+            return scipy_violation(cut_lhs, cut_rhs, binvc, lp_solution, integral_indices)/abs(cut_rhs)
         else:
-            raise ModelViolation("value gamma_0 >0")
-        # pi_p(f) = 1
-        if abs(v[f_index] - 1) <= epsilon:
-            v[f_index] = 1
-        else:
-            scipy_interface_logger.debug(f"validate_point: breakpoint lambda_{f_index} !=1: point: {point}, cell: {cell}")
-            raise ModelViolation(f"value gamma_{f_index} != 1")
-        return v
-        # We are assuming breakpoints are model multiplicity free.
-        # sprace enough breakpoints ensure no two breakpoitns are close enough to need an epsilon chart when solving.
+            return scipy_violation(cut_lhs, cut_rhs, binvc, lp_solution, integral_indices)
 
-def scipy_objective_function_parallelism(cut_lhs, cut_rhs, binvc, lp_solution, integral_indices):
-    # eval cutcoefs_expr at val to get cut. 
-    cut = np.array(cut_lhs)/np.linalg.norm(cut_lhs)
-    c = np.array(binvc)/np.linalg.norm(binvc)
-    # scipy_interface_logger.debug(f"{cut @ c}")
-    return cut @ c
+    def scipy_cut_off_distance(self, cut_lhs, cut_rhs, binvc, lp_solution, integral_indices):
+        """
+        Paramaterized version of cut off distance cut score.
+        
+        See `scipyCutScoreForBkptAsParam.gen_cut_score` for parameter arguments.
+        """
+        return scipy_violation(cut_lhs, cut_rhs, binvc, lp_solution, integral_indices)/np.linalg.norm(np.array(cut_lhs))
 
-def grad_scipy_objective_function_parallelism(cut_lhs, cut_rhs, binvc, lp_solution, integral_indices):
-    raise NotImplementedError
+    def integer_support(self, cut_lhs, cut_rhs, binvc, lp_solution, integral_indices):
+        """
+        Paramaterized version of integer support cut score.
+        
+        See `scipyCutScoreForBkptAsParam.gen_cut_score` for parameter arguments.
+        """
+        raise NotImplementedError
+        support_count = 0
+        for c in integral_indices:
+            if abs(cut_lhs[c]) > 1e-9:
+                support_count += 1
+        return support_count
+        
 
-#def scipy_scip_standard_cut_score(cut_lhs, cut_rhs, binvc, lp_solution, integral_indices):
-#    pass
 
-def scipy_violation(cut_lhs, cut_rhs, binvc, lp_solution, integral_indices):
-    scipy_interface_logger.debug(f"{np.array(cut_lhs)@ np.array(lp_solution) - cut_rhs}")
-    return np.array(cut_lhs)@ np.array(lp_solution) - cut_rhs
-    
-def scipy_realitive_violation(cut_lhs, cut_rhs, binvc, lp_solution, integral_indices):
-    if cut_rhs != 0:
-        return scipy_violation(cut_lhs, cut_rhs, binvc, lp_solution, integral_indices)/abs(cut_rhs)
-    else:
-        return scipy_violation(cut_lhs, cut_rhs, binvc, lp_solution, integral_indices)
-
-def scipy_cut_off_distance(cut_lhs, cut_rhs, binvc, lp_solution, integral_indices):
-    return scipy_violation(cut_lhs, cut_rhs, binvc, lp_solution, integral_indices)/np.linalg.norm(np.array(cut_lhs))
-
-def integer_support(cut_lhs, cut_rhs, binvc, lp_solution, integral_indices):
-    support_count = 0
-    for c in integral_indices:
-        if abs(cut_lhs[c]) > 1e-9:
-            support_count += 1
-    return support_count
-    
