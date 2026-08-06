@@ -70,7 +70,7 @@ To run all trials::
     ./run_experiments.sh
 
 
-Excuting all times corrosponds to allocating 3,584,000 minutes of cluster time.
+Running ``run_experiments`` corrosponds to allocating 3,584,000 minutes of cluster time.
 
 
 ========
