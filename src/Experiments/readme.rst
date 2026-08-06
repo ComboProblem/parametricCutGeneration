@@ -55,24 +55,23 @@ To run a single trial.::
     chmod +x ./run_single_trial.sh
     ./run_single_trial.sh 64 gen-ip016
 
-To run all trials::
 
-    chmod +x ./run_experiments.sh
-    ./run_experiments.sh
-
-Runs trial 64 on the model gen-ip002 from the 2017 MIP LIB benchmark set. 
+In general ``./run_single_trial.sh exp_ID model_name``.
+Runs trial 64 on the model gen-ip016 from the 2017 MIP LIB benchmark set. 
 This trial corrosponds to the no cut generation baseline.
 The current configuration assumes 200 minutes of run time per trial using a single core and 10G of memory.
 Modifying this could have adverse effects.
 In future versions, alternative run time configurations will be supported. 
 
-In general ``./run_single_trial.sh exp_ID model_name``. 
 
-If you wish to reproduce all experiments (about 3 weeks in real time with at ~ 50 jobs running concurrently),
+To run all trials::
 
-```chmod +x ./run_experiments.sh
-   ./run_experiments.sh
-``` 
+    chmod +x ./run_experiments.sh
+    ./run_experiments.sh
+
+
+Excuting all times corrosponds to allocating 3,584,000 minutes of cluster time.
+
 
 ========
 WARNINGS
