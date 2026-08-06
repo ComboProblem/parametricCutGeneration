@@ -2,6 +2,8 @@
 build/
 .git/
 src/parametricCutGeneration.egg-info/
+# cgp exp enviroment
+src/Experiments/TEMP
 # Ignore slurm output files
 *.out
 # Ignore sif images
