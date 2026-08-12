@@ -1,11 +1,50 @@
 from cutgeneratingfunctionology.igp import *
 from parametricCutGen.cut_generation_problem import *
 from parametricCutGen.cgf_specializations import *
+from parametricCutGen.experimental_utils.pyscipopt_data_collection_events import *
 from pyscipopt import Model, quicksum, SCIP_PARAMSETTING, exp, log, sqrt, sin, SCIP_HEURTIMING
+import json
 import os
+import logging
 
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
-model_name = os.getenv("MODEL")
+def scip():
+    scip = Model()
+    scip.hideOutput()
+    return scip
+
+functions_logger = logging.getLogger("cutgeneratingfunctionology.igp.functions")
+functions_logger.setLevel(logging.ERROR)
+r"""
+Transform raw data (generated cgf log from an experimental .txt output) to a useable format as a .cgfl (cut generating function libary)
+
+The .cgfl contains the following information
+
+%model_name %metadata
+
+%model_name is the name of the model
+%metadata is resvered for future use.
+
+    To include eventually::
+    %version = { package : version for package in parametricatCutGeneration }
+    %source = url_to_model.mps
+    %solution = url_to_solution.sol
+    %max_constraint_violation = real >= 0
+
+For
+ 
+%cut_gen_info %generation_params %stats
+
+row is row of the MIP the cut was generated with. 
+
+%cut_gen_info = ((b,v), row) the point in RR^{2n} corrosponding to a cut generating function (or approximation there of) and the row it generates a cut for.
+
+%generation_params = {"cut_score": list_of_str, "chart_epsilon" : list_of_floats, "problem_dim": list_of_int }
+
+%stats = {"max_constraint_volation" : float, "is_gmic": bool, "realitive_change_in_gap": float, "tree_depth_approx": int}
+"""
 
 cut_score_names = ['parallelism', 'cut_off_distance', 'violation', 'realitive_violation']
 trial_eps_denom = [2*i for i in range(1,17)]
@@ -13,150 +52,237 @@ trial_cuts = [1]
 
 bits_for_id = 6
 
+
+def find_possible_f_index(fun):
+    r"""
+    Assume a model function, fun, with a finite number of breakpoints is given.
+    Finds the index i such that minimizes |fun(lambda_i) - 1| 
+
+    INPUT:
+    - igp piecewise linear function
+
+    OUTPUT:
+    - integer or None
+    """
+    values = [fun(x) for x in  fun.end_points()]
+    try:
+        f_index = values.index(1)
+    except Exception as e:
+        f_index = np.argmin([abs(v-1) for v in values])
+    return f_index
+        
+
 def as_sage_rational(dct):
+    """
+    TESTS::
+    >>> sage_rational_zero = as_sage_rational({'__sage.rings.rational.Rational__': True, 'numerator': 0, 'denominator': 1})
+    >>> sage_rational_zero in QQ
+    True
+    """
     if "__sage.rings.rational.Rational__" in dct:
         return QQ(dct["numerator"]/dct["denominator"])
-	return dct
+    return dct
 
-def load_exp(exp_id):
-    if exp_id < 64:
+def load_and_process_data(model_name, sol_path, numerical_epsilon=1e-9):
+    oracle_sol, no_cuts_dual_value, tree_depth_without_cuts = get_oracle_sol_and_no_cuts_dual_value(model_name, sol_path, scip_time=60, count=None)
+    logger.debug(f"dual_bound_no_cuts: {no_cuts_dual_value}, tree depth: {tree_depth_without_cuts}")
+    exp_data = {"bkpt_val_cgf":[None, None], "generation_params":[{"cut_score": None, "chart_epsilon":None, "problem_dim": None }], "stats":[{"max_constraint_violation" : None, "is_gmic": None , "dual_bound": no_cuts_dual_value, "tree_depth_approx": tree_depth_without_cuts}]}
+    good_fun_count = 0
+    for exp_id in range(64):
         bit_string =  '0'*(bits_for_id-exp_id.bit_length()) + bin(exp_id)[2:]
         cut_score_index = int(bit_string[0:2], 2)
         esp_index =  int(bit_string[2:], 2)
         number_of_cuts_index = 0 #int(bit_string[5:], 2)
-	    dual_log_with_cuts = {"row" : [], "ncuts": [], "dual_value" : [] }
-	    fun_data = {"row" : [], "ncuts" : [], "fun": [], "score":[], "problem_dim":[]}
-	    preprocessed_data = {"exp_id": exp_id,  "dual_log": dual_log_with_cuts, "fun_data" : fun_data} 
-        with open(f"data/{model_name}.bkpt_as_param.{cut_score_names[cut_score_index]}.{trial_eps_denom[esp_index]}.{trial_cuts[number_of_cuts_index]}.txt", 'r') as data_file:
-            data = json.loads(model.data, data_file, object_hook=sage_rational_decoder)
-        for log in data["dual_log"]:
-            if len(log[2]) == 1:
-                cut_name = log[3].spit(":")[0]
-                ncut, row = cut_name.split("optimal_cut")[1].split("_x")
-                dual_log_with_cuts["ncuts"].append(int(ncut))
-                dual_log_with_cuts["row"].append(int(row))
-                dual_log_with_cuts["dual_value"].append(log[1])
-        for paramaterized_data in data["cgf_log"]:
-            fun_data["row"].append(data["cgf_log"][4])
-            fun_data["ncuts"].append(data["cgf_log"][3])
-            b = data["cgf_log"][0][0]
-            v = data["cgf_log"][0][1]
-            fun_data["fun"].append(piecewise_function_from_breakpoints_and_values(b, v))
-            fun_data["problem_dim"].append(data["cgf_log"][2])
-            fun_data["score"].append(data["cgf_log"][1])
-    elif exp_id == 64:
-	    dual_log_with_cuts = {"row" : None, "ncuts": None, "dual_value" : [] }
-	    fun_data = {"row" : None, "ncuts" : None, "fun": None, "score": None, "problem_dim":None}
-	    preprocessed_data = {"exp_id": exp_id,  "dual_log": dual_log_with_cuts, "fun_data" : fun_data}
-	return preprocessed_trial
-	
-def preprocess_data(model_name):
-	# load all trials
-    preprocessed_data = {"exp_id": []}
-	for exp_id in range(65):
-		try:
-            preprocessed_trial = load_exp(exp_id)
-			preprocessed_data["exp_id"].append(exp_id)
-            preprocessed_data[exp_id] = preprocessed_trial
-		except Exception as e: # if the trial has failed to run, we will get a loading error, just contiue here.
-			continue
-    # compare accross cut scores, fix eps and a row. 
-    return preprocessed_data
+    #        dual_log_with_cuts = {"row" : [], "ncuts": [], "dual_value" : [] }
+    #        preprocessed_data = {"exp_id": exp_id, "fun_data" : fun_data}
+        logger.debug(f"loading exp_id: {exp_id}")
+        try:
+            logger.debug(f"attempting to load: data/{model_name}.bkpt_as_param.{cut_score_names[cut_score_index]}.{trial_eps_denom[esp_index]}.{trial_cuts[number_of_cuts_index]}.txt")
+            with open(f"data/{model_name}.bkpt_as_param.{cut_score_names[cut_score_index]}.{trial_eps_denom[esp_index]}.{trial_cuts[number_of_cuts_index]}.txt", 'r') as data_file:
+                data = json.load(data_file)
 
-def process_minimality_constraint_violation(preprocessed_data, max_minimality_constraint_violation=1e-9):
-	"""Compute max constraint violation of minimality test. """
-    def minimality_constraint_violation(fun):
-	    for lhs in generate_type_1_vertices_continuous_expr(fun):
-            if lhs > -1*max_minimality_constraint_violation:
-                return False
-	    for lhs in generate_type_2_vertices_continuous_expr(fun):
-            if lhs > -1*max_minimality_constraint_violation:
-                return False
-	    f_index = find_f_index(fun)
-	    f = fun.end_points()[f_index]    
-        for lhs in generate_symmetric_vertices_continuous_expr(fun, f):
-            if abs(lhs - 1) > max_minimality_constraint_violation:
-                return False
-        return True
-    functions_are_approx_minimal = lambda exp_id : [minimality_constraint_violation(fun) for fun in preprocessed_data[exp_id]["fun_data"]["fun"]]
-    # report success rate of this. (should be 100%)
-    result = {exp_id : functions_are_approx_minimal(exp_id) for exp_id in preprocessed_data["exp_id"]}
-    return result
-
-def process_compare_functions(preprocess_data, is_all_gmic, fun_equality=1e-9):
-    """Check if esp_denom, number of cuts are fixed, if functions with different cut scores are within norm of each other"""
-    result = {} # row result will be 
-    for eps_index in range(2, 17):
-        exp_ids = [int(bin(i)[2:]+bin(eps_index)[2:], 2) for i in range(4)]
-        if all((exp_id in preprocess_data) for exp_id in exp_ids):
-            if not all( [all(is_all_gmic[exp_id]) for exp_id in preprocess_data["exp_id"]]):
-                min_no_cgp_solved = min([len(preprocessed_data[exp_id]["fun_data"]) for exp_id in exp_ids])
-                result[trial_eps_denom[eps_index]] = { "min_no_cgp_solved": min_no_cgp_solved, "row_result" : []}                 
-                for i in range(min_no_cgp_solved):
-                    # use zip or iterator combinatorics.
-                    res = []
-                    for pair in permuations(range(4), 2):
-                        f = preprocessed_data[exp_ids[pair[0]]]["fun_data"]["fun"][i]
-                        f_tilde = preprocessed_data[exp_ids[pair[1]]]["fun_data"]["fun"][i]
-                        if function_norm(f, f_tilde) < fun_equality:
-                            res.append(True)
+        #            print(data["dual_log"])
+        #        for log in data["dual_log"]:
+        #            if len(log[2]) == 1:
+        #                cut_name = log[3].spit(":")[0]
+        #                ncut, row = cut_name.split("optimal_cut")[1].split("_x")
+        #                dual_log_with_cuts["ncuts"].append(int(ncut))
+        #                dual_log_with_cuts["row"].append(int(row))
+        #                dual_log_with_cuts["dual_value"].append(log[1])
+            for datum in data["cgf_log"]:
+                b = [ as_sage_rational(dct) for dct in datum[0][0] ]
+                v = [ as_sage_rational(dct) for dct in datum[0][1] ]
+                row = datum[4]
+                fun = piecewise_function_from_breakpoints_and_values(b, v)
+                max_constraint_violation = minimality_constraint_violation(fun)
+                logger.debug(f"parm data: {(b,v)}, {row}")
+                try:
+                    if max_constraint_violation <= numerical_epsilon:
+                        if ((b,v), row) not in exp_data["bkpt_val_cgf"]: 
+                            tree_depth_approx, dual_bound = realitive_gap_and_tree_approx(fun, row, model_name, sol_path, oracle_sol, no_cuts_dual_value, scip_time=60, count=good_fun_count)
+                            good_fun_count += 1
+                            logger.debug(f"function is approx minimal")
+                            exp_data["bkpt_val_cgf"].append(((b,v), row))
+                            exp_data["generation_params"].append({"cut_score": [cut_score_names[cut_score_index]], "chart_epsilon": [QQ(1/trial_eps_denom[esp_index])], "problem_dim": [datum[2]] })
+                            exp_data["stats"].append({"max_constraint_violation" : max_constraint_violation, "is_gmic": is_gmic(fun, numerical_epsilon), "dual_bound": dual_bound, "tree_depth_approx": tree_depth_approx})
+                            logger.debug(f"compute result: {tree_depth_approx}, {dual_bound-no_cuts_dual_value}")
                         else:
-                            res.append(False)
-                    result[trial_eps_denom[eps_index]]["row_result"].append(res)
-        else:
-            continue
-    return result
+                            logger.debug(f"functions stats already computed, adding generation data.")
+                            ind = exp_data["bkpt_val_cgf"].index(((b,v), row))
+                            exp_data["generation_params"][ind]["cut_score"].append(cut_score_names[cut_score_index])
+                            exp_data["generation_params"][ind]["chart_epsilon"].append(QQ(1/trial_eps_denom[esp_index]))
+                            exp_data["generation_params"][ind]["problem_dim"].append(datum[2])
+                    else:
+                        if ((b,v), row) not in exp_data["bkpt_val_cgf"]: 
+                            dual_bound = "DidNotCompute"
+                            tree_depth_approx = "DidNotCompute"
+                            logger.debug(f"function is not approx minimal, no computations")
+                            exp_data["bkpt_val_cgf"].append(((b,v), row))
+                            exp_data["generation_params"].append({"cut_score": [cut_score_names[cut_score_index]], "chart_epsilon": [QQ(1/trial_eps_denom[esp_index])], "problem_dim": [datum[2]] })
+                            exp_data["stats"].append({"max_constraint_violation" : max_constraint_violation, "is_gmic": is_gmic(fun, numerical_epsilon), "dual_bound": dual_bound, "tree_depth_approx": tree_depth_approx})
+                        else:
+                            ind = exp_data["bkpt_val_cgf"].index(((b,v), row))
+                            exp_data["generation_params"][ind]["cut_score"].append(cut_score_names[cut_score_index])
+                            exp_data["generation_params"][ind]["chart_epsilon"].append(QQ(1/trial_eps_denom[esp_index]))
+                            exp_data["generation_params"][ind]["problem_dim"].append(datum[2])
+                    
+                except Exception as e:
+                    logger.error("error in running calcuations")
+                    logger.error(e)
+        except Exception as e:
+            logger.info(f"No record found for experiment id {exp_id}")
+    return exp_data
 
-def process_if_functions_are_gmic(preprocessed_data, fun_equality=1e-9):
-    def is_gmic(fun):
-	    f_index = find_f_index(fun)
-	    f = fun.end_points()[f_index]
-	    if inf_norm_of_cont_pwl(fun, gmic(f)) < fun_equality:
-		    return True
-	    return False
-    functions_are_gmic = lambda exp_id : [is_gmic(fun) for fun in preprocessed_data[exp_id]["fun_data"]["fun"]]
-	result = {exp_id : functions_are_gmic(exp_id) for exp_id in preprocessed_data["exp_id"]}
-    return result
+def minimality_constraint_violation(fun):
+    """
+    Assume there exists an f in (0,1) s.t. fun(f) == 1.
+    
+    max_constraint_violation >= 0
+    
+    delta fun(x,y) := fun(x) + fun(y) - fun(x+y) 
+    
+    Evaluates the truth of the statement:
+    evaluates min(delta fun(x,y)) for all x,y in R and
+    For all x+y equiv f pmod 1, evaluate max(abs(delta fun(x, y) - 1)). 
+    Report the least of these two values.
 
-def realitive_gap_and_tree_approx(preprocessed_data, model_name, sol_path):
-    result_result_rel_gap = {}
-    result_tree_approx = {}
-    result = {}
-    temp = {}
-    def tree_depth_approx(oracle_sol, sol_processed):
-        return sum(int(abs(oracle_sol[key]-sol_processed[key]))+1 for  key in oracle_sol.keys())
-    for exp_id in preprocessed_data["exp_id"]:
-        for row,fun in zip(preprocessed_data[exp_id]["fun_data"]["row"], preprocessed_data[exp_id]["fun_data"]["fun"])
-            model = Model()
-            model.readProblem(filename=f"model_files/{model_name}.mps")
-            model.setParam("limits/time", scip_time)
-            model.setSeparating(SCIP_PARAMSETTING.OFF)
-            sepa = backTest(exp_id, row, fun, model_name)
-            model.includeSepa(sepa, "optimal_cut", "optimal cut over space of paramaterized cut generating functions", priority=10000, freq=0)
-            model.setParam("separating/maxcutsroot", 1)
-            model.setParam("separating/maxroundsroot", 1)
-            model.setHeuristics(SCIP_PARAMSETTING.OFF)
-            heuristic = OracleHeurisitc(sol_path)
-            model.setPresolve(SCIP_PARAMSETTING.OFF)
-            model.includeHeur(heuristic, "OracleHeurisitc", "for observing changes in dual bound from cuts", "Y", timingmask=SCIP_HEURTIMING.DURINGLPLOOP)
-            model.setParam("limits/nodes", 1)
-            model.optimize()
-            model.writeMIP(filename=f"TEMP/{model_name}.{exp_id}.{row}.lp")
-            model_lp_with_cut.readProblem(filename=f"TEMP/{model_name}.{exp_id}.{row}.lp")
-            model_lp_with_cut.relax()
-            model_lp_with_cut.optimize()
-            sol = model_lp_with_cut.getVarDict()
-            sol_processed = {key : sol["t_"+key] for key in oracle_sol.keys() }
-            dual_value = model_lp_with_cut.getDualbound()
-            if exp_id != 64:
-                temp[exp_id] = (sol_processed, dual_value)
-            if exp_id == 64:
-                temp[exp_id] = (sol_processed, dual_value)
-                oracle_sol = model.getVarDict()                
-                temp["oracle_sol"] = oracle_sol
-    for exp_id in preprocessed_data["exp_id"]:
-        result_tree_approx[exp_id] = tree_depth_approx(temp[exp_id][0],temp["oracle_sol"])
-        result_result_rel_gap[exp_id] = abs(temp[exp_id][1]-temp[64][1])/max(abs(temp[64][1]))
-    result["tree_approx"] = result_tree_approx
-    result["dual_gap"] = result_result_rel_gap
-    return result
+    If the value returend is 0, then fun is minimal.
+    Otherwise, the value is maximum miniality constraint violation.
+
+    Parameters::
+    `fun` - 1DPWL 
+    `max_constraint_violation` - element of [0,infty). 
+    TESTS::
+    >>> minimality_constraint_violation(gmic(4/5))
+    0
+    >>> f = piecewise_function_from_breakpoints_and_values([0, 1/3, 2/3, 1], [0, 1, 1/4, 0])
+    >>> minimality_constraint_violation(f)
+    .5
+    """
+    f_index = find_possible_f_index(fun)
+    f_val = fun.end_points()[f_index]
+    sym = [abs(float(delta_pi_eval) -1) for delta_pi_eval in generate_symmetric_vertices_continuous_expr(fun, f_val)]
+    type_1 = [float(lhs) for lhs in generate_type_1_vertices_continuous_expr(fun)]
+    type_2 = [float(lhs) for lhs in generate_type_2_vertices_continuous_expr(fun)]
+    m_1 = min(type_1+type_2) # m_1 = 0  if and only if fun is subadditive
+    if m_1 < 0:
+        m_1 = abs(m_1)
+    m_2 = max(sym) # m_2 = 0 if and only if fun is symmetric
+    return max(m_1,m_2)
+
+def is_gmic(fun, fun_equality=1e-9):
+    """
+    Suppose a function f in PWL{<=n} is given. 
+    assume fun(f) == 1 and f is a breakpoint.
+    Evaluate (||fun - gmic(f)||_inf <= fun_equality).
+    
+    Parameters::
+    `fun` - 1DPWL 
+    `fun_equality` - element of [0,infty). 
+    """
+    try:
+        f_index = find_possible_f_index(fun)
+    except Exception as e:
+        f_index = None
+    if f_index is not None:
+        f = fun.end_points()[f_index]
+        if inf_norm_of_cont_pwl(fun, gmic(f)) <= fun_equality: # from topology of PWL
+            return True
+    return False
+
+def realitive_gap_and_tree_approx(fun, row, model_name, sol_path, oracle_sol, no_cuts_dual_value, scip_time=60, count=None):
+    model = scip()
+    model.readProblem(filename=f"model_files/{model_name}.mps")
+    model.setParam("limits/time", scip_time)
+    model.setSeparating(SCIP_PARAMSETTING.OFF)
+    sepa = backTest(count, row, fun, model_name)
+    model.includeSepa(sepa, "optimal_cut", "optimal cut over space of paramaterized cut generating functions", priority=10000, freq=0)
+    model.setParam("separating/maxcutsroot", 1)
+    model.setParam("separating/maxroundsroot", 1)
+    model.setHeuristics(SCIP_PARAMSETTING.OFF)
+    heuristic = OracleHeurisitc(sol_path)
+    model.setPresolve(SCIP_PARAMSETTING.OFF)
+    model.includeHeur(heuristic, "OracleHeurisitc", "for observing changes in dual bound from cuts", "Y", timingmask=SCIP_HEURTIMING.DURINGLPLOOP)
+    model.setParam("limits/nodes", 1)
+    try:
+        model.optimize()
+    except Exception as e:
+        raise e
+    try:
+        model.writeMIP(filename=f"TEMP/{model_name}/{count}.lp")
+    except Exception as e:
+        logger.debug(e)
+    model_lp_with_cut = scip()
+    model_lp_with_cut.readProblem(filename=f"TEMP/{model_name}/{count}.lp")
+    model_lp_with_cut.relax()
+    model_lp_with_cut.optimize()
+    sol = model_lp_with_cut.getVarDict()    
+    sol_processed = {key : sol["t_"+key] for key in oracle_sol.keys() }
+    dual_value = model_lp_with_cut.getDualbound()
+    tree_depth_result = tree_depth_approx(sol_processed, oracle_sol)
+    return tree_depth_result, dual_value
+
+def get_oracle_sol_and_no_cuts_dual_value(model_name, sol_path, scip_time=60, count=None):
+    model = scip()
+    model.readProblem(filename=f"model_files/{model_name}.mps")
+    model.setParam("limits/time", scip_time)
+    model.setSeparating(SCIP_PARAMSETTING.OFF)
+    sepa = backTest(count, None, None, model_name)
+    model.includeSepa(sepa, "optimal_cut", "optimal cut over space of paramaterized cut generating functions", priority=10000, freq=0)
+    model.setParam("separating/maxcutsroot", 1)
+    model.setParam("separating/maxroundsroot", 1)
+    model.setHeuristics(SCIP_PARAMSETTING.OFF)
+    heuristic = OracleHeurisitc(sol_path)
+    model.setPresolve(SCIP_PARAMSETTING.OFF)
+    model.includeHeur(heuristic, "OracleHeurisitc", "for observing changes in dual bound from cuts", "Y", timingmask=SCIP_HEURTIMING.DURINGLPLOOP)
+    model.setParam("limits/nodes", 1)
+    model.optimize()
+    oracle_sol = model.getVarDict()
+    model.writeMIP(filename=f"TEMP/{model_name}/{count}.lp")
+    model_root_lp_with_bounds = scip()
+    model_root_lp_with_bounds.readProblem(filename=f"TEMP/{model_name}/{count}.lp")
+    model_root_lp_with_bounds.relax()
+    model_root_lp_with_bounds.optimize()
+    sol = model_root_lp_with_bounds.getVarDict()
+    sol_processed = {key : sol["t_"+key] for key in oracle_sol.keys() }
+    no_cuts_dual_value = model_root_lp_with_bounds.getDualbound()
+    tree_depth_without_cuts = tree_depth_approx(oracle_sol, sol_processed)
+    return oracle_sol, no_cuts_dual_value, tree_depth_without_cuts
+
+def tree_depth_approx(oracle_sol, sol_processed):
+    return sum(int(abs(oracle_sol[key]-sol_processed[key]))+1 for  key in oracle_sol.keys())
+
+def sage_rational_to_json(obj):
+    if isinstance(obj, sage.rings.rational.Rational):
+        return {'__sage.rings.rational.Rational__': True, 'numerator': int(obj.numerator()), 'denominator': int(obj.denominator())}
+    raise TypeError(f'Cannot serialize object of {type(obj)}')
+
+def __main__():
+    model_name = os.getenv("MODEL_NAME")
+    sol_path = f"solution_files/solutions/{model_name}/1/{model_name}.sol"
+    data["metadata"] = {"cgp_version":"0.0.1alpha", "numerical_epsilon":1e-9, "model_name":model_name}
+    data = load_and_process_data(model_name, sol_path)
+    with open("result/{model_name}.cgfl") as cgfl:
+        json.dump(data, cgfl, default=sage_rational_to_json)
+
+__main__()

@@ -114,7 +114,7 @@ class OracleSelector(Eventhdlr):
 
 
 class backTest(Sepa):
-    def __init__(self, exp_id, row=None, fun=None, model_name=None):
+    def __init__(self, count=None, row=None, fun=None, model_name=None):
         """
         TESTS::
         >>> from parametricCutGen.optimal_cut_generation import OptimalCut
@@ -127,7 +127,7 @@ class backTest(Sepa):
         >>> model.includeSepa(other_sepa, "optima_cut", "bkpt as param gmic", priority=1000, freq=1)
         """
         self.ncuts = 0
-        self.exp_id = exp_id
+        self.count = count
         self.row=row
         self.fun=fun
         self.model_name=model_name
@@ -299,19 +299,31 @@ class backTest(Sepa):
         # get basis indices
         basisind = model.getLPBasisInd()
         # For all basic columns (not slacks) belonging to integer variables, decide if the row should be tried. 
-        data_collection_logger.debug(f"{self.row}")
+
         if self.row is None:
             data_collection_logger.debug(f"None Branch")
-            model.writeLP(filename=f"TEMP/{self.model_name}.{self.exp_id}.{self.row}.lp")
+            model.writeLP(filename=f"TEMP/{self.model_name}/{self.count}.lp")
             model.interruptSolve()  
             return {"result": result}
         else:
             cgf = self.fun
-            c = self.row
-            i = [basisind[i] for i in range(len(rows))].index(c)
-# [basisind[i] if basisind[i] >= 0 else -basisind[i]-1 for i in range(len(cols)) ].index(c)
 
+            #data_collection_logger.debug(f"{fractional(QQ(primsol))}, {cgf}")
+            i = None
+            for ind in range(len(rows)):
+                c = basisind[ind]
+                if c == self.row:
+                    i = ind
+                    break
+                elif -c-1 == self.row:
+                    i = ind
+                    break
             primsol = cols[c].getPrimsol()
+            if i is None:
+                raise ValueError(f"row:{self.row} is not in LP relaxation")
+
+            # i = [basisind[i] if basisind[i] >= 0 else -basisind[i] -1 for i in range(len(rows))].index(c)	
+
 
             # get the row of B^-1 for this basic integer variable with fractional solution value
             binvrow = model.getLPBInvRow(i)

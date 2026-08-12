@@ -35,7 +35,7 @@ class OptimalCut(Sepa):
         """
         self.ncuts = 0
         self.write_cgf_data = write_cgf_data
-        self.max_cuts =
+        self.max_cuts = max_cuts
         if cgp_kwds is None:
             self.cgp = cutGenerationProblem()
         else:    
