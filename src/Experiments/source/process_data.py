@@ -280,8 +280,8 @@ def sage_rational_to_json(obj):
 def __main__():
     model_name = os.getenv("MODEL_NAME")
     sol_path = f"solution_files/solutions/{model_name}/1/{model_name}.sol"
-    data["metadata"] = {"cgp_version":"0.0.1alpha", "numerical_epsilon":1e-9, "model_name":model_name}
     data = load_and_process_data(model_name, sol_path)
+    data["metadata"] = {"cgp_version":"0.0.1alpha", "numerical_epsilon":1e-9, "model_name":model_name}
     with open("result/{model_name}.cgfl") as cgfl:
         json.dump(data, cgfl, default=sage_rational_to_json)
 
