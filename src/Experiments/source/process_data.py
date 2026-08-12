@@ -8,13 +8,15 @@ import os
 import logging
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.ERROR)
 
 def scip():
     scip = Model()
     scip.hideOutput()
     return scip
 
+pcg_exp_logger = logging.getLogger("parametricCutGen.experimental_utils.pyscipopt_data_collection_events")
+pcg_exp_logger.setLevel(logging.ERROR)
 functions_logger = logging.getLogger("cutgeneratingfunctionology.igp.functions")
 functions_logger.setLevel(logging.ERROR)
 r"""
