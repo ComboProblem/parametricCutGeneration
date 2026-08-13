@@ -1,8 +1,7 @@
 #!/bin/bash
 
 export MODEL_NAME="$1"
-export TIMING="n"
-export RUN_TIME="-1"
+export EST_RUN="$2"
 
 echo "Running on $(hostname)"
 echo "Processing Data: Model: $MODEL_NAME"

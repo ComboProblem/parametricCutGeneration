@@ -342,15 +342,15 @@ def sage_rational_to_json(obj):
     raise TypeError(f'Cannot serialize object of {type(obj)}')
 
 def __main__():
-    model_name = "sp97ar" #os.getenv("MODEL_NAME")
-    est_time = 2 #int(os.getenv("RUN_TIME")) #in minutes
-    estimate_run = "y" #os.getenv("EST_RUN")
+    model_name = os.getenv("MODEL_NAME")
+    est_time = 11 #int(os.getenv("RUN_TIME")) #in minutes
+    estimate_run = os.getenv("EST_RUN")
     sol_path = f"solution_files/solutions/{model_name}/1/{model_name}.sol"
     if estimate_run == "y":
         time_est = est_process_time(model_name, sol_path, max_est_time=(est_time-1.5)*60)
         alloc_slurm_time = int(time_est/60)+ 60
         with open(f"TEMP/{model_name}_data_run.sh", "w") as full_run:
-            full_run.write(f"#!/bin/bash\nCLUSTER_ACCOUNT=$1\nPARTITION=$1\nsbatch --account=$CLUSTER_ACCOUNT --partition=$PARTITION --mem=5G --time={alloc_slurm_time}:00 --output=\"TEMP/{model_name}_result_ID_%a.out\" source/process_data.sh \"{model_name}\"")
+            full_run.write(f"#!/bin/bash\nCLUSTER_ACCOUNT=$1\nPARTITION=$1\nsbatch --account=$CLUSTER_ACCOUNT --partition=$PARTITION --mem=5G --time={alloc_slurm_time}:00 --output=\"TEMP/{model_name}_result_ID_%a.out\" source/process_data.sh \"{model_name}\" n")
             
     else:
         data = load_and_process_data(model_name, sol_path, scip_time=scip_time)
