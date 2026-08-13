@@ -8,7 +8,7 @@ import os
 import logging
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.ERROR)
+logger.setLevel(logging.DEBUG)
 
 def scip():
     scip = Model()
@@ -85,8 +85,8 @@ def as_sage_rational(dct):
         return QQ(dct["numerator"]/dct["denominator"])
     return dct
 
-def load_and_process_data(model_name, sol_path, numerical_epsilon=1e-9):
-    oracle_sol, no_cuts_dual_value, tree_depth_without_cuts = get_oracle_sol_and_no_cuts_dual_value(model_name, sol_path, scip_time=60, count=None)
+def load_and_process_data(model_name, sol_path, numerical_epsilon=1e-9, scip_time=90):
+    oracle_sol, no_cuts_dual_value, tree_depth_without_cuts = get_oracle_sol_and_no_cuts_dual_value(model_name, sol_path, scip_time=scip_time, count=None)
     logger.debug(f"dual_bound_no_cuts: {no_cuts_dual_value}, tree depth: {tree_depth_without_cuts}")
     exp_data = {"bkpt_val_cgf":[None, None], "generation_params":[{"cut_score": None, "chart_epsilon":None, "problem_dim": None }], "stats":[{"max_constraint_violation" : None, "is_gmic": None , "dual_bound": no_cuts_dual_value, "tree_depth_approx": tree_depth_without_cuts}]}
     good_fun_count = 0
@@ -95,22 +95,11 @@ def load_and_process_data(model_name, sol_path, numerical_epsilon=1e-9):
         cut_score_index = int(bit_string[0:2], 2)
         esp_index =  int(bit_string[2:], 2)
         number_of_cuts_index = 0 #int(bit_string[5:], 2)
-    #        dual_log_with_cuts = {"row" : [], "ncuts": [], "dual_value" : [] }
-    #        preprocessed_data = {"exp_id": exp_id, "fun_data" : fun_data}
         logger.debug(f"loading exp_id: {exp_id}")
         try:
             logger.debug(f"attempting to load: data/{model_name}.bkpt_as_param.{cut_score_names[cut_score_index]}.{trial_eps_denom[esp_index]}.{trial_cuts[number_of_cuts_index]}.txt")
             with open(f"data/{model_name}.bkpt_as_param.{cut_score_names[cut_score_index]}.{trial_eps_denom[esp_index]}.{trial_cuts[number_of_cuts_index]}.txt", 'r') as data_file:
                 data = json.load(data_file)
-
-        #            print(data["dual_log"])
-        #        for log in data["dual_log"]:
-        #            if len(log[2]) == 1:
-        #                cut_name = log[3].spit(":")[0]
-        #                ncut, row = cut_name.split("optimal_cut")[1].split("_x")
-        #                dual_log_with_cuts["ncuts"].append(int(ncut))
-        #                dual_log_with_cuts["row"].append(int(row))
-        #                dual_log_with_cuts["dual_value"].append(log[1])
             for datum in data["cgf_log"]:
                 b = [ as_sage_rational(dct) for dct in datum[0][0] ]
                 v = [ as_sage_rational(dct) for dct in datum[0][1] ]
@@ -121,7 +110,7 @@ def load_and_process_data(model_name, sol_path, numerical_epsilon=1e-9):
                 try:
                     if max_constraint_violation <= numerical_epsilon:
                         if ((b,v), row) not in exp_data["bkpt_val_cgf"]: 
-                            tree_depth_approx, dual_bound = realitive_gap_and_tree_approx(fun, row, model_name, sol_path, oracle_sol, no_cuts_dual_value, scip_time=60, count=good_fun_count)
+                            tree_depth_approx, dual_bound = realitive_gap_and_tree_approx(fun, row, model_name, sol_path, oracle_sol, no_cuts_dual_value, scip_time=scip_time, count=good_fun_count)
                             good_fun_count += 1
                             logger.debug(f"function is approx minimal")
                             exp_data["bkpt_val_cgf"].append(((b,v), row))
@@ -154,6 +143,79 @@ def load_and_process_data(model_name, sol_path, numerical_epsilon=1e-9):
         except Exception as e:
             logger.info(f"No record found for experiment id {exp_id}")
     return exp_data
+
+def est_process_time(model_name, sol_path, numerical_epsilon=1e-9, scip_time=90, seed=None, sample_size_per_exp=3, max_est_time=600):
+    import random
+    import time
+    if seed is None:
+        seed = random.seed()
+    else:
+        seed = random.seed(seed)
+    logger.debug(f"Python random seed: {seed}")
+    number_of_samples_recored=0
+    total_number_of_trials_to_process=0
+    total_time = 0
+    start_no_cuts = time.time()
+    oracle_sol, no_cuts_dual_value, tree_depth_without_cuts = get_oracle_sol_and_no_cuts_dual_value(model_name, sol_path, scip_time=scip_time, count=None)
+    logger.debug(f"dual_bound_no_cuts: {no_cuts_dual_value}, tree depth: {tree_depth_without_cuts}")
+    exp_data = {"bkpt_val_cgf":[None, None], "generation_params":[{"cut_score": None, "chart_epsilon":None, "problem_dim": None }], "stats":[{"max_constraint_violation" : None, "is_gmic": None , "dual_bound": no_cuts_dual_value, "tree_depth_approx": tree_depth_without_cuts}]}
+    end_no_cuts = time.time()
+    total_time += end_no_cuts - start_no_cuts 
+    number_of_samples_recored+=1
+    good_fun_count = 0
+    for exp_id in range(64):
+        bit_string =  '0'*(bits_for_id-exp_id.bit_length()) + bin(exp_id)[2:]
+        cut_score_index = int(bit_string[0:2], 2)
+        esp_index =  int(bit_string[2:], 2)
+        number_of_cuts_index = 0 #int(bit_string[5:], 2)
+        logger.debug(f"loading exp_id: {exp_id}")
+        try:
+            logger.debug(f"attempting to load: data/{model_name}.bkpt_as_param.{cut_score_names[cut_score_index]}.{trial_eps_denom[esp_index]}.{trial_cuts[number_of_cuts_index]}.txt")
+            with open(f"data/{model_name}.bkpt_as_param.{cut_score_names[cut_score_index]}.{trial_eps_denom[esp_index]}.{trial_cuts[number_of_cuts_index]}.txt", 'r') as data_file:
+                data = json.load(data_file)
+            num_fun = len(data["cgf_log"])
+            total_number_of_trials_to_process += num_fun
+            logger.info(f"exp_id {exp_id} recorded {num_fun} functions.")
+            if total_time < max_est_time:            
+                indices = random.sample(range(num_fun), sample_size_per_exp)
+                for datum in [data["cgf_log"][i] for i in indices]:
+                    sample_start_time = time.time()
+                    b = [ as_sage_rational(dct) for dct in datum[0][0] ]
+                    v = [ as_sage_rational(dct) for dct in datum[0][1] ]
+                    row = datum[4]
+                    fun = piecewise_function_from_breakpoints_and_values(b, v)
+                    max_constraint_violation = minimality_constraint_violation(fun)
+                    logger.debug(f"parm data: {(b,v)}, {row}")
+                    try:
+                        if max_constraint_violation <= numerical_epsilon:
+                            tree_depth_approx, dual_bound = realitive_gap_and_tree_approx(fun, row, model_name, sol_path, oracle_sol, no_cuts_dual_value, scip_time=scip_time, count=good_fun_count)
+                            good_fun_count += 1
+                            logger.debug(f"function is approx minimal")
+                            exp_data["bkpt_val_cgf"].append(((b,v), row))
+                            exp_data["generation_params"].append({"cut_score": [cut_score_names[cut_score_index]], "chart_epsilon": [QQ(1/trial_eps_denom[esp_index])], "problem_dim": [datum[2]] })
+                            exp_data["stats"].append({"max_constraint_violation" : max_constraint_violation, "is_gmic": is_gmic(fun, numerical_epsilon), "dual_bound": dual_bound, "tree_depth_approx": tree_depth_approx})
+                        else:
+                            dual_bound = "DidNotCompute"
+                            tree_depth_approx = "DidNotCompute"
+                            logger.debug(f"function is not approx minimal, no computations")
+                            exp_data["bkpt_val_cgf"].append(((b,v), row))
+                            exp_data["generation_params"].append({"cut_score": [cut_score_names[cut_score_index]], "chart_epsilon": [QQ(1/trial_eps_denom[esp_index])], "problem_dim": [datum[2]] })
+                            exp_data["stats"].append({"max_constraint_violation" : max_constraint_violation, "is_gmic": is_gmic(fun, numerical_epsilon), "dual_bound": dual_bound, "tree_depth_approx": tree_depth_approx})
+                        
+                    except Exception as e:
+                        logger.error("error in running calcuations")
+                        logger.error(e)
+                    sample_end_time = time.time()
+                    total_time += sample_end_time - sample_start_time
+                    number_of_samples_recored+=1
+                else:
+                    continue
+
+        except Exception as e:
+            logger.info(f"No record found for experiment id {exp_id}")
+    mean_time = total_time/number_of_samples_recored
+    logger.debug(f"mean_time: {mean_time}, total_number_of_trials_to_process:{total_number_of_trials_to_process}")
+    return (mean_time)*total_number_of_trials_to_process
 
 def minimality_constraint_violation(fun):
     """
@@ -280,11 +342,20 @@ def sage_rational_to_json(obj):
     raise TypeError(f'Cannot serialize object of {type(obj)}')
 
 def __main__():
-    model_name = os.getenv("MODEL_NAME")
+    model_name = "sp97ar" #os.getenv("MODEL_NAME")
+    est_time = 2 #int(os.getenv("RUN_TIME")) #in minutes
+    estimate_run = "y" #os.getenv("EST_RUN")
     sol_path = f"solution_files/solutions/{model_name}/1/{model_name}.sol"
-    data = load_and_process_data(model_name, sol_path)
-    data["metadata"] = {"cgp_version":"0.0.1alpha", "numerical_epsilon":1e-9, "model_name":model_name}
-    with open("result/{model_name}.cgfl") as cgfl:
-        json.dump(data, cgfl, default=sage_rational_to_json)
+    if estimate_run == "y":
+        time_est = est_process_time(model_name, sol_path, max_est_time=(est_time-1.5)*60)
+        alloc_slurm_time = int(time_est/60)+ 60
+        with open(f"TEMP/{model_name}_data_run.sh", "w") as full_run:
+            full_run.write(f"#!/bin/bash\nCLUSTER_ACCOUNT=$1\nPARTITION=$1\nsbatch --account=$CLUSTER_ACCOUNT --partition=$PARTITION --mem=5G --time={alloc_slurm_time}:00 --output=\"TEMP/{model_name}_result_ID_%a.out\" source/process_data.sh \"{model_name}\"")
+            
+    else:
+        data = load_and_process_data(model_name, sol_path, scip_time=scip_time)
+        data["metadata"] = {"cgp_version":"0.0.1alpha", "numerical_epsilon":1e-9, "model_name":model_name}
+        with open(f"result/{model_name}.cgfl", "w") as cgfl:
+            json.dump(data, cgfl, default=sage_rational_to_json)
 
 __main__()
