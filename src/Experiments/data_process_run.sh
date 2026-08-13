@@ -11,7 +11,7 @@ do
     model_name=$(basename $model .mps)
     echo "Queing data processing pipeline for $model_name."
     chmod +x "./TEMP/{$model_name}_data_run.sh"
-    ./TEMP/{$model_name}_data_run.sh $CLUSTER_ACCOUNT $PARTITON
+    ./TEMP/"{$model_name}_data_run.sh" $CLUSTER_ACCOUNT $PARTITON
     ((JOB_COUNT=JOB_COUNT+1))
     if (( JOB_COUNT == 80 )); then
         echo "Giving some time for other jobs to finish."
