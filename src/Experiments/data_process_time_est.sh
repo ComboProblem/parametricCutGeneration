@@ -10,8 +10,7 @@ for model in model_files/*
 do
     model_name=$(basename $model .mps)
     echo "Queing data processing pipeline for $model_name."
-    chmod +x "./TEMP/{$model_name}_data_run.sh"
-    sbatch --account=$CLUSTER_ACCOUNT --partition=$PARTITION --mem=5G --time=$SLURM_TIME:00 --output="TEMP/${model_name}_result_ID_%a.out" source/process_data.sh $model_name y
+    sbatch --account=$CLUSTER_ACCOUNT --partition=$PARTITION --mem=5G --time=12:00 --output="TEMP/${model_name}_result_ID_%a.out" source/process_data.sh $model_name y
     ((JOB_COUNT=JOB_COUNT+1))
     if (( JOB_COUNT == 80 )); then
         echo "Giving some time for other jobs to finish."

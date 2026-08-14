@@ -10,8 +10,15 @@ for model in model_files/*
 do
     model_name=$(basename $model .mps)
     echo "Queing data processing pipeline for $model_name."
-    chmod +x ./TEMP/{$model_name}_data_run.sh
-    ./TEMP/{$model_name}_data_run.sh $CLUSTER_ACCOUNT $PARTITON
+    data_run_file_name="${model_name}_data_run.sh"
+    if [-f "TEMP/${data_run_file}" ]; then
+        echo "Time estimated file exists."
+        chmod +x ./TEMP/$data_run_file_name
+         ./TEMP/$data_run_file_name $CLUSTER_ACCOUNT $PARTITON
+    else
+        sbatch --account=$CLUSTER_ACCOUNT --partition=$PARTITION --mem=5G --time=120:00 --output="TEMP/${model_name}_result_ID_%a.out" source/process_data.sh $model_name i
+    fi
+    
     ((JOB_COUNT=JOB_COUNT+1))
     if (( JOB_COUNT == 80 )); then
         echo "Giving some time for other jobs to finish."
