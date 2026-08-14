@@ -1,10 +1,11 @@
 #!/bin/bash
 
 export MODEL_NAME="$1"
-export EST_RUN="n"
+export EST_RUN="$2"
 
 echo "Running on $(hostname)"
 echo "Processing Data: Model: $MODEL_NAME"
+echo "Data process mode: $EST_RUN"
 
 mkdir TEMP/$MODEL_NAME
 module load apptainer

@@ -362,7 +362,7 @@ def __main__():
         time_est = est_process_time(model_name, sol_path, max_est_time=(est_time-2)*60)
         alloc_slurm_time = int(time_est/60)+ 60
         with open(f"TEMP/{model_name}_data_run.sh", "w") as full_run:
-            full_run.write(f"#!/bin/bash\nCLUSTER_ACCOUNT=$1\nPARTITION=$1\nsbatch --account=$CLUSTER_ACCOUNT --partition=$PARTITION --mem=5G --time={alloc_slurm_time}:00 --output=\"TEMP/{model_name}_result_ID_%a.out\" source/process_data.sh \"{model_name}\" n")
+            full_run.write(f"#!/bin/bash\nCLUSTER_ACCOUNT=$1\nPARTITION=$2\nsbatch --account=$CLUSTER_ACCOUNT --partition=$PARTITION --mem=5G --time={alloc_slurm_time}:00 --output=\"TEMP/{model_name}_result_ID_%a.out\" source/process_data.sh \"{model_name}\" n")
             
     else:
         if estimate_run == "n":
