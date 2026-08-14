@@ -11,7 +11,7 @@ do
     model_name=$(basename $model .mps)
     echo "Queing data processing pipeline for $model_name."
     data_run_file_name="${model_name}_data_run.sh"
-    if [-f "TEMP/${data_run_file}" ]; then
+    if [ -f "TEMP/${data_run_file}" ]; then
         echo "Time estimated file exists."
         chmod +x ./TEMP/$data_run_file_name
          ./TEMP/$data_run_file_name $CLUSTER_ACCOUNT $PARTITON
