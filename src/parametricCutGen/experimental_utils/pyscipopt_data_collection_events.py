@@ -61,6 +61,11 @@ def record_data(model: Model):
 
 # model.readSolFile()
 class OracleHeurisitc(Heur):
+    """
+    Given a path to a known solution to the model, add the solution to the model.
+    
+    This is used for providing bounds for the purpose of measuring dual bounds.
+    """
     def __init__(self, path):
         self._path = path
 
@@ -96,8 +101,8 @@ class OracleHeurisitc(Heur):
 
 
 class OracleSelector(Eventhdlr):
-
     def __init__(self, model,  path):
+        raise NotImplementedError
         Eventhdlr.__init__(model)
         self._path = path
 
@@ -116,15 +121,12 @@ class OracleSelector(Eventhdlr):
 class backTest(Sepa):
     def __init__(self, count=None, row=None, fun=None, model_name=None):
         """
-        TESTS::
-        >>> from parametricCutGen.optimal_cut_generation import OptimalCut
-        >>> from piscipopt import Model
-        >>> model = Model()
-        >>> sepa = OptimalCut() # gmic by default
-        >>> model.includeSepa(sepa, "optimal_cut", "full space gmic", priority=1000, freq=1)
-        >>> cgp_kwds = {"algorithm":"bkpt_as_param"}
-        >>> other_sepa = OptimalCut(cgp_kwds=cgp_kwds)
-        >>> model.includeSepa(other_sepa, "optima_cut", "bkpt as param gmic", priority=1000, freq=1)
+        For generating a single cut along a row using cgf.
+
+        count - ordinal, for keeping track of cutgs generated.
+        row - row to cut of the LP relaxation basis
+        fun - cgf or something that is approx a cgf
+        model_name -  for naming file output when not cut is present
         """
         self.ncuts = 0
         self.count = count
@@ -347,7 +349,7 @@ class backTest(Sepa):
             model.addCut(cut, forcecut=False)
             infeasible = model.addCut(cut, forcecut=False)
             self.ncuts += 1
-
+            model.data["cut_efficacy"] = model.getCutEfficacy(cut)
             if infeasible:
                result = SCIP_RESULT.CUTOFF
             else:
@@ -356,64 +358,3 @@ class backTest(Sepa):
             # model.writeMIP(filename=f"TEMP/{self.model_name}.{self.exp_id}.{self.row}.lp")
             # model.interruptSolve()
             return {"result": result}
-#
-#def OracleHeurisitc(Heur):
-#
-#    def heurexec(self, heurtiming, nodeinfeasible):
-#
-#        scip = self.model
-#        result = SCIP_RESULT.DIDNOTRUN
-#
-#        # This heuristic does not run if the LP status is not optimal
-#        lpsolstat = scip.getLPSolstat()
-#        if lpsolstat != SCIP_LPSOLSTAT.OPTIMAL:
-#            return {"result": result}
-#
-#        # We haven't added handling of implicit integers to this heuristic
-#        if scip.getNImplVars() > 0:
-#            return {"result": result}
-#
-#        # Get the current branching candidate, i.e., the current fractional variables with integer requirements
-#        branch_cands, branch_cand_sols, branch_cand_fracs, ncands, npriocands, nimplcands = scip.getLPBranchCands()
-#
-#        # Ignore if there are no branching candidates
-#        if ncands == 0:
-#            return {"result": result}
-#
-#        # Create a solution that is initialised to the LP values
-#        sol = scip.createSol(self, initlp=True)
-#
-#        # Now round the variables that can be rounded
-#        for i in range(ncands):
-#            old_sol_val = branch_cand_sols[i]
-#            scip_var = branch_cands[i]
-#            may_round_up = scip_var.varMayRound(direction="up")
-#            may_round_down = scip_var.varMayRound(direction="down")
-#            # If we can round in both directions then round in objective function direction
-#            if may_round_up and may_round_down:
-#                if scip_var.getObj() >= 0.0:
-#                    new_sol_val = scip.feasFloor(old_sol_val)
-#                else:
-#                    new_sol_val = scip.feasCeil(old_sol_val)
-#            elif may_round_down:
-#                new_sol_val = scip.feasFloor(old_sol_val)
-#            elif may_round_up:
-#                new_sol_val = scip.feasCeil(old_sol_val)
-#            else:
-#                # The variable cannot be rounded. The heuristic will fail.
-#                continue
-#
-#            # Set the rounded new solution value
-#            scip.setSolVal(sol, scip_var, new_sol_val)
-#
-#        # Now try the solution. Note: This will free the solution afterwards by default.
-#        stored = scip.trySol(sol)
-#
-#        if stored:
-#            return {"result": SCIP_RESULT.FOUNDSOL}
-#        else:
-#            return {"result": SCIP_RESULT.DIDNOTFIND}
-
-#heuristic = OracleHeurisitc()
-#scip.includeHeur(heuristic, "OracleHeurisitc", "for observing changes in dual bound from cuts", "Y",
-#                 timingmask=SCIP_HEURTIMING.BEFORENODE)
