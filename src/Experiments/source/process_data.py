@@ -353,9 +353,9 @@ def sage_rational_to_json(obj):
     raise TypeError(f'Cannot serialize object of {type(obj)}')
 
 def __main__():
-    model_name = "air05" #os.getenv("MODEL_NAME")
+    model_name = "enlight_hard" #os.getenv("MODEL_NAME")
     est_time = 12 #int(os.getenv("RUN_TIME")) #in minutes
-    estimate_run = "i" # os.getenv("EST_RUN") #
+    estimate_run = "n" # os.getenv("EST_RUN") #
     
     sol_path = f"solution_files/solutions/{model_name}/1/{model_name}.sol"
     if estimate_run == "y":
