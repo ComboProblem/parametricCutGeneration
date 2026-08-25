@@ -93,7 +93,7 @@ def load_and_process_data(model_name, sol_path, numerical_epsilon=1e-9, scip_tim
     """
     oracle_sol, no_cuts_dual_value, tree_depth_without_cuts = get_oracle_sol_and_no_cuts_dual_value(model_name, sol_path, scip_time=scip_time, count=None)
     logger.debug(f"dual_bound_no_cuts: {no_cuts_dual_value}, tree depth: {tree_depth_without_cuts}")
-    exp_data = {"bkpt_val_cgf":[None, None], "generation_params":[{"cut_score": None, "chart_epsilon":None, "problem_dim": None }], "stats":[{"max_constraint_violation" : None, "is_gmic": None , "dual_bound": no_cuts_dual_value, "tree_depth_approx": tree_depth_without_cuts, "cut_efficacy": None}]}
+    exp_data = {"bkpt_val_cgf":[(None, None)], "generation_params":[{"cut_score": None, "chart_epsilon":None, "problem_dim": None }], "stats":[{"max_constraint_violation" : None, "is_gmic": None , "dual_bound": no_cuts_dual_value, "tree_depth_approx": tree_depth_without_cuts, "cut_efficacy": None}]}
     good_fun_count = 0
     for exp_id in range(64):
         bit_string =  '0'*(bits_for_id-exp_id.bit_length()) + bin(exp_id)[2:]
@@ -133,7 +133,7 @@ def load_and_process_data(model_name, sol_path, numerical_epsilon=1e-9, scip_tim
                             dual_bound = "DidNotCompute"
                             tree_depth_approx = "DidNotCompute"
                             cut_efficacy = "DidNotCompute"
-                            if stats:
+                            if not stats:
                                 logger.debug(f"Stats are turned off.")
                             else:
                                 logger.debug(f"function is not approx minimal, no computations")
@@ -353,9 +353,9 @@ def sage_rational_to_json(obj):
     raise TypeError(f'Cannot serialize object of {type(obj)}')
 
 def __main__():
-    model_name = "enlight_hard" #os.getenv("MODEL_NAME")
+    model_name = os.getenv("MODEL_NAME")
     est_time = 12 #int(os.getenv("RUN_TIME")) #in minutes
-    estimate_run = "n" # os.getenv("EST_RUN") #
+    estimate_run = os.getenv("EST_RUN") #
     
     sol_path = f"solution_files/solutions/{model_name}/1/{model_name}.sol"
     if estimate_run == "y":
